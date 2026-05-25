@@ -16,12 +16,10 @@ import mimetypes
 import os
 import re
 import socket
-import struct
 import urllib.parse
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
-from typing import Collection, Optional
+from typing import IO
 
 from PIL import Image
 
@@ -185,7 +183,7 @@ def _resolve_host(host: str) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
     for family, _, _, _, sockaddr in infos:
-        ip = sockaddr[0]
+        ip = str(sockaddr[0])
         if ip not in seen:
             seen.add(ip)
             result.append(ip)
@@ -289,7 +287,7 @@ def check_file_size(
 
 
 def check_file_size_stream(
-    readable,  # file-like object with .read()
+    readable: IO[bytes],  # file-like object with .read()
     *,
     max_size: int | None = None,
     config: SecurityConfig | None = None,
@@ -354,7 +352,7 @@ _FTYPE_BRAND_MIME: dict[bytes, str] = {
 }
 
 
-def _detect_mime_from_bytes(header: bytes) -> Optional[str]:
+def _detect_mime_from_bytes(header: bytes) -> str | None:
     """Attempt MIME detection from file header bytes (first 32 bytes)."""
     for magic, mime in _IMAGE_MAGIC_BYTES:
         if header.startswith(magic):
@@ -396,7 +394,7 @@ def validate_mime_type(
     path = Path(path)
 
     # Magic-byte sniffing (read first 32 bytes)
-    detected: Optional[str] = None
+    detected: str | None = None
     with open(path, "rb") as fh:
         header = fh.read(32)
 
@@ -466,7 +464,7 @@ class ValidationResult:
     path: Path
     file_size: int
     mime_type: str
-    image_size: Optional[tuple[int, int]] = None
+    image_size: tuple[int, int] | None = None
 
 
 def validate_file(
@@ -497,7 +495,7 @@ def validate_file(
     mime = validate_mime_type(resolved, config=config)
 
     # 4. Image pixel check
-    image_size: Optional[tuple[int, int]] = None
+    image_size: tuple[int, int] | None = None
     if is_image:
         image_size = check_image_pixels(resolved, config=config)
 

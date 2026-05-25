@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 from pathlib import Path
 from typing import Annotated
@@ -11,9 +10,11 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from .config import get_config
-from .media import ImagePayload, VideoPayload, load_image, load_video
-from .providers import registry, OpenAICompatibleProvider, OllamaProvider, AnthropicProvider
-from .security import SecurityConfig as _SecurityConfig, validate_file, validate_local_path, check_file_size, validate_url
+from .media import load_image, load_video
+from .providers import AnthropicProvider, OllamaProvider, OpenAICompatibleProvider, registry
+from .providers.base import BaseProvider
+from .security import SecurityConfig as _SecurityConfig
+from .security import check_file_size, validate_file, validate_local_path, validate_url
 
 # Setup logging
 logging.basicConfig(
@@ -45,6 +46,7 @@ def initialize_providers() -> None:
 
     for p_config in config.providers:
         try:
+            provider: BaseProvider
             if p_config.type == "openai":
                 provider = OpenAICompatibleProvider(
                     name=p_config.name,
@@ -60,6 +62,7 @@ def initialize_providers() -> None:
             elif p_config.type == "anthropic":
                 provider = AnthropicProvider(
                     name=p_config.name,
+                    base_url=p_config.base_url,
                     api_key=p_config.api_key,
                     model=p_config.model,
                     timeout=config.api_timeout,
@@ -96,7 +99,7 @@ async def analyze_image(
 ) -> str:
     """
     Analyze a single image using vision AI.
-    
+
     Supports local files and URLs. Performs security validation before processing.
     """
     try:
@@ -135,7 +138,7 @@ async def analyze_multiple_images(
 ) -> str:
     """
     Compare multiple images using vision AI.
-    
+
     Supports 2-10 images. Useful for finding differences, tracking changes, etc.
     """
     try:
@@ -183,7 +186,7 @@ async def analyze_video(
 ) -> str:
     """
     Analyze a video using vision AI.
-    
+
     Extracts frames and analyzes them to understand video content.
     Supports local files and URLs.
     """
@@ -231,7 +234,7 @@ async def ocr_image(
 ) -> str:
     """
     Extract text from an image using vision AI (OCR).
-    
+
     Optimized prompt for text extraction with language detection.
     """
     try:
@@ -280,7 +283,7 @@ async def get_supported_formats() -> str:
     Get list of supported image/video formats and capabilities.
     """
     config = get_config()
-    
+
     formats = """## Supported Formats
 
 ### Images
@@ -315,7 +318,7 @@ async def get_supported_formats() -> str:
         max_video_duration=config.max_video_duration_minutes,
         providers="\n".join(f"- {name}" for name in registry.list_providers()) or "(none configured)"
     )
-    
+
     return formats
 
 

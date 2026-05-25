@@ -20,9 +20,10 @@ providers:
   #   api_key: ${OPENAI_API_KEY}
   #   model: gpt-4o  # 可选: gpt-4o-mini, gpt-4-turbo 等
 
-  # 示例 3: Anthropic Claude（不需要 base_url，自动使用官方 API）
+  # 示例 3: Anthropic Claude（base_url 可选，默认官方 API；第三方中转填对应地址）
   # - name: anthropic
   #   type: anthropic
+  #   # base_url: https://你的中转地址/v1  # 第三方中转服务才需要，官方 API 不用填
   #   api_key: ${ANTHROPIC_API_KEY}
   #   model: claude-3-5-sonnet-20241022  # 可选: claude-3-opus-20240229 等
 

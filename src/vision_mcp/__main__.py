@@ -6,7 +6,7 @@ import sys
 from .server import serve
 
 
-def main():
+def main() -> None:
     """Main entry point."""
     try:
         asyncio.run(serve())

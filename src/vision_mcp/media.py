@@ -16,7 +16,7 @@ import mimetypes
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
 
 import httpx
 from PIL import Image
@@ -24,14 +24,11 @@ from PIL import Image
 from .security import (
     DEFAULT_MAX_FILE_SIZE,
     FileSizeError,
-    MimeTypeError,
     SecurityConfig,
     SecurityError,
-    ValidationResult,
     check_file_size,
     validate_file,
     validate_local_path,
-    validate_remote_file,
     validate_url,
 )
 
@@ -93,13 +90,13 @@ class VideoPayload:
     """Standardized payload for a video."""
 
     # base64-encoded video data (full video, or empty if frame-only mode)
-    data: Optional[str] = None
+    data: str | None = None
     mime_type: str = "video/mp4"
     source: str = ""
     duration_sec: float = 0.0
     width: int = 0
     height: int = 0
-    frames: List[VideoFrame] = field(default_factory=list)
+    frames: list[VideoFrame] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
 
     def has_frames(self) -> bool:
@@ -147,7 +144,7 @@ _MIME_BY_EXT: dict[str, str] = {
 }
 
 
-def _guess_mime(path_or_url: str) -> Optional[str]:
+def _guess_mime(path_or_url: str) -> str | None:
     """Guess MIME type from file extension or URL path."""
     parsed = Path(path_or_url)
     ext = parsed.suffix.lower()
@@ -190,7 +187,7 @@ def _downsample_image(
     scale = max_dimension / longest
     new_w = max(1, int(w * scale))
     new_h = max(1, int(h * scale))
-    return img.resize((new_w, new_h), Image.LANCZOS)
+    return img.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
 
 def _encode_image_base64(img: Image.Image, *, fmt: str = "JPEG") -> str:
@@ -241,7 +238,7 @@ def _format_for_mime(mime_type: str) -> str:
 def _load_image_from_file(
     path: str | Path,
     *,
-    config: Optional[SecurityConfig] = None,
+    config: SecurityConfig | None = None,
     max_dimension: int = DEFAULT_MAX_IMAGE_DIMENSION,
     force_downsample: bool = False,
 ) -> ImagePayload:
@@ -289,10 +286,10 @@ def _load_image_from_file(
 async def _load_bytes_from_url(
     url: str,
     *,
-    config: Optional[SecurityConfig] = None,
+    config: SecurityConfig | None = None,
     max_redirects: int = DEFAULT_MAX_REDIRECTS,
     timeout: float = DEFAULT_HTTP_TIMEOUT,
-) -> tuple[bytes, str, Optional[str]]:
+) -> tuple[bytes, str, str | None]:
     """Fetch bytes from a URL with redirect following and SSRF protection.
 
     Returns (raw_bytes, final_url, content_type).
@@ -369,7 +366,7 @@ def _check_stream_size(
 async def _load_image_from_url(
     url: str,
     *,
-    config: Optional[SecurityConfig] = None,
+    config: SecurityConfig | None = None,
     max_dimension: int = DEFAULT_MAX_IMAGE_DIMENSION,
     max_redirects: int = DEFAULT_MAX_REDIRECTS,
     timeout: float = DEFAULT_HTTP_TIMEOUT,
@@ -391,7 +388,7 @@ async def _load_image_from_url(
     # 1. Magic-byte sniffing from response body (most reliable)
     # 2. HTTP Content-Type header
     # 3. URL extension guess
-    mime_type: Optional[str] = None
+    mime_type: str | None = None
 
     header = raw_bytes[:32]
     from .security import _detect_mime_from_bytes
@@ -408,7 +405,7 @@ async def _load_image_from_url(
 
     # Decode image
     try:
-        img = Image.open(io.BytesIO(raw_bytes))
+        img: Image.Image = Image.open(io.BytesIO(raw_bytes))
         img.load()  # force decode
     except Exception as e:
         raise ImageDecodeError(f"Failed to decode image from {url}: {e}") from e
@@ -443,7 +440,7 @@ async def _load_image_from_url(
 async def load_image(
     source: str,
     *,
-    config: Optional[SecurityConfig] = None,
+    config: SecurityConfig | None = None,
     max_dimension: int = DEFAULT_MAX_IMAGE_DIMENSION,
     force_downsample: bool = False,
     max_redirects: int = DEFAULT_MAX_REDIRECTS,
@@ -498,21 +495,21 @@ def _extract_frames_opencv(
     *,
     num_frames: int = DEFAULT_VIDEO_FRAME_COUNT,
     is_url: bool = False,
-    config: Optional[SecurityConfig] = None,
+    config: SecurityConfig | None = None,
     max_redirects: int = DEFAULT_MAX_REDIRECTS,
     timeout: float = DEFAULT_HTTP_TIMEOUT,
-    raw_bytes: Optional[bytes] = None,
+    raw_bytes: bytes | None = None,
 ) -> list[VideoFrame]:
     """Extract frames from a video using OpenCV.
 
     Evenly distributes *num_frames* across the video timeline.
     Falls back gracefully if OpenCV is not installed.
     """
-    import cv2
+    import cv2  # type: ignore[import-not-found]
 
     # For URLs, download first
     video_path: str = path_or_url
-    temp_file: Optional[str] = None
+    temp_file: str | None = None
 
     if is_url and raw_bytes is None:
         raise VideoError("raw_bytes must be provided for URL-based video extraction")
@@ -594,9 +591,9 @@ def _extract_frames_ffmpeg_fallback(
     First probes video duration, then calculates an appropriate fps to
     extract evenly-spaced frames — works correctly for short videos too.
     """
+    import shutil
     import subprocess
     import tempfile
-    import shutil
 
     if not shutil.which("ffmpeg"):
         raise VideoError(
@@ -674,7 +671,7 @@ def _extract_frames_ffmpeg_fallback(
 async def load_video(
     source: str,
     *,
-    config: Optional[SecurityConfig] = None,
+    config: SecurityConfig | None = None,
     num_frames: int = DEFAULT_VIDEO_FRAME_COUNT,
     encode_full_video: bool = False,
     max_redirects: int = DEFAULT_MAX_REDIRECTS,
@@ -716,7 +713,7 @@ async def load_video(
     mime_type = _guess_mime(source) or "video/mp4"
 
     # Full video encoding (optional, can be very large)
-    full_b64: Optional[str] = None
+    full_b64: str | None = None
     if encode_full_video:
         if raw_bytes:
             if len(raw_bytes) > config.max_file_size:
@@ -807,7 +804,7 @@ async def load_video(
 async def load_media(
     source: str,
     *,
-    config: Optional[SecurityConfig] = None,
+    config: SecurityConfig | None = None,
     max_dimension: int = DEFAULT_MAX_IMAGE_DIMENSION,
     force_downsample: bool = False,
     num_frames: int = DEFAULT_VIDEO_FRAME_COUNT,

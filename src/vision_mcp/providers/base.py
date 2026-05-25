@@ -25,6 +25,10 @@ class AnalysisResult:
 class BaseProvider(abc.ABC):
     """Abstract base class for vision providers."""
 
+    _client: httpx.AsyncClient | None = None
+    model: str
+    timeout: float
+
     @property
     @abc.abstractmethod
     def name(self) -> str:
@@ -64,32 +68,31 @@ class BaseProvider(abc.ABC):
         combined = "\n\n".join(texts)
         return AnalysisResult(
             text=combined,
-            model=getattr(self, 'model', 'unknown'),
+            model=self.model,
             provider=self.name,
         )
 
     def _get_client(self) -> httpx.AsyncClient:
         """Get or create a long-lived async client for connection reuse."""
-        if not hasattr(self, '_client') or self._client is None:
+        if self._client is None:
             self._client = httpx.AsyncClient(timeout=self.timeout)
         return self._client
 
     async def close(self) -> None:
         """Close the HTTP client and release resources."""
-        client = getattr(self, '_client', None)
-        if client is not None:
-            await client.aclose()
+        if self._client is not None:
+            await self._client.aclose()
             self._client = None
 
 
 class OpenAICompatibleProvider(BaseProvider):
     """
     OpenAI-compatible API provider (OpenAI, DashScope, etc.)
-    
+
     Supports any API that follows the OpenAI chat completions format
     with image_url content blocks.
     """
-    
+
     def __init__(
         self,
         base_url: str,
@@ -105,11 +108,11 @@ class OpenAICompatibleProvider(BaseProvider):
         self._name = name
         self.timeout = timeout
         self.max_retries = max_retries
-    
+
     @property
     def name(self) -> str:
         return self._name
-    
+
     async def analyze(
         self,
         image_data: str,
@@ -148,7 +151,7 @@ class OpenAICompatibleProvider(BaseProvider):
             ],
             "max_tokens": 2000,
         }
-        
+
         last_error = None
         for attempt in range(self.max_retries):
             try:
@@ -250,7 +253,7 @@ class OpenAICompatibleProvider(BaseProvider):
 
 class OllamaProvider(BaseProvider):
     """Ollama local vision model provider."""
-    
+
     def __init__(
         self,
         base_url: str = "http://localhost:11434",
@@ -264,11 +267,11 @@ class OllamaProvider(BaseProvider):
         self._name = name
         self.timeout = timeout
         self.max_retries = max_retries
-    
+
     @property
     def name(self) -> str:
         return self._name
-    
+
     async def analyze(
         self,
         image_data: str,
@@ -285,7 +288,7 @@ class OllamaProvider(BaseProvider):
             "images": [image_data],
             "stream": False,
         }
-        
+
         last_error = None
         for attempt in range(self.max_retries):
             try:
@@ -316,26 +319,35 @@ class OllamaProvider(BaseProvider):
 
 
 class AnthropicProvider(BaseProvider):
-    """Anthropic Claude vision API provider."""
-    
+    """Anthropic Claude vision API provider.
+
+    Supports the official Anthropic API as well as third-party
+    Anthropic-compatible endpoints (proxies, AWS Bedrock, etc.)
+    by accepting an optional ``base_url``.
+    """
+
+    _DEFAULT_BASE_URL = "https://api.anthropic.com"
+
     def __init__(
         self,
         api_key: str,
         model: str = "claude-3-5-sonnet-20241022",
         name: str = "anthropic",
+        base_url: str = "",
         timeout: float = 60.0,
         max_retries: int = 3,
     ):
         self.api_key = api_key
         self.model = model
         self._name = name
+        self.base_url = (base_url.strip().rstrip("/") if base_url else self._DEFAULT_BASE_URL)
         self.timeout = timeout
         self.max_retries = max_retries
-    
+
     @property
     def name(self) -> str:
         return self._name
-    
+
     async def analyze(
         self,
         image_data: str,
@@ -345,7 +357,7 @@ class AnthropicProvider(BaseProvider):
     ) -> AnalysisResult:
         """Analyze image via Anthropic Messages API."""
 
-        url = "https://api.anthropic.com/v1/messages"
+        url = f"{self.base_url}/v1/messages"
         headers = {
             "x-api-key": self.api_key,
             "anthropic-version": "2023-06-01",
@@ -375,7 +387,7 @@ class AnthropicProvider(BaseProvider):
                 }
             ],
         }
-        
+
         last_error = None
         for attempt in range(self.max_retries):
             try:
@@ -418,7 +430,7 @@ class AnthropicProvider(BaseProvider):
         model_override: str | None = None,
     ) -> AnalysisResult:
         """Send multiple images in a single Anthropic Messages API request."""
-        url = "https://api.anthropic.com/v1/messages"
+        url = f"{self.base_url}/v1/messages"
         headers = {
             "x-api-key": self.api_key,
             "anthropic-version": "2023-06-01",
@@ -485,35 +497,35 @@ class AnthropicProvider(BaseProvider):
 
 class ProviderRegistry:
     """Registry for managing multiple vision providers."""
-    
-    def __init__(self):
+
+    def __init__(self) -> None:
         self._providers: dict[str, BaseProvider] = {}
         self._default: str | None = None
-    
+
     def register(self, provider: BaseProvider, default: bool = False) -> None:
         """Register a provider."""
         self._providers[provider.name] = provider
         if default or self._default is None:
             self._default = provider.name
         logger.info(f"Registered provider: {provider.name} (default={default})")
-    
+
     def get(self, name: str | None = None) -> BaseProvider:
         """Get a provider by name, or default if not specified."""
         if name is None:
             if self._default is None:
                 raise ValueError("No default provider registered")
             name = self._default
-        
+
         if name not in self._providers:
             available = ", ".join(self._providers.keys())
             raise ValueError(f"Provider '{name}' not found. Available: {available}")
-        
+
         return self._providers[name]
-    
+
     def list_providers(self) -> list[str]:
         """List all registered provider names."""
         return list(self._providers.keys())
-    
+
     @property
     def default(self) -> str | None:
         """Get default provider name."""

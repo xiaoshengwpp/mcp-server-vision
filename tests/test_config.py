@@ -374,7 +374,8 @@ providers:
 class TestEnvProviderMode:
     """Test VISION_MCP_PROVIDER_* environment variable configuration."""
 
-    def test_env_creates_single_provider(self):
+    @patch('vision_mcp.config._find_simple_config_yaml', return_value=None)
+    def test_env_creates_single_provider(self, mock_find):
         env = {
             "VISION_MCP_PROVIDER_TYPE": "openai",
             "VISION_MCP_PROVIDER_BASE_URL": "https://api.example.com/v1",
@@ -416,7 +417,8 @@ providers:
         assert len(config.providers) == 1
         assert config.providers[0].model == "gpt-4o-mini"
 
-    def test_env_invalid_provider_warns_and_skips(self):
+    @patch('vision_mcp.config._find_simple_config_yaml', return_value=None)
+    def test_env_invalid_provider_warns_and_skips(self, mock_find):
         """Invalid VISION_MCP_PROVIDER_* config doesn't crash."""
         env = {
             "VISION_MCP_PROVIDER_TYPE": "openai",

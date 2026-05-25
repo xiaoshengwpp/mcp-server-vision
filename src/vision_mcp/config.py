@@ -24,16 +24,17 @@ from __future__ import annotations
 import os
 import re
 import sys
+from dataclasses import dataclass
+from dataclasses import field as _dc_field
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 from pydantic import (
     AnyHttpUrl,
     Field,
     FilePath,
-    HttpUrl,
     PositiveFloat,
     PositiveInt,
     field_validator,
@@ -106,11 +107,11 @@ class VisionProviderConfig(BaseSettings):
     )
 
     # --- Rate limiting ---
-    requests_per_minute: Optional[PositiveInt] = Field(
+    requests_per_minute: PositiveInt | None = Field(
         default=None,
         description="Rate limit: max requests per minute. None = no limit.",
     )
-    tokens_per_minute: Optional[PositiveInt] = Field(
+    tokens_per_minute: PositiveInt | None = Field(
         default=None,
         description="Rate limit: max tokens per minute. None = no limit.",
     )
@@ -150,20 +151,20 @@ class MultiProviderConfig(BaseSettings):
         default_factory=VisionProviderConfig,
         description="The default / fallback provider configuration.",
     )
-    fallback: Optional[VisionProviderConfig] = Field(
+    fallback: VisionProviderConfig | None = Field(
         default=None,
         description="Fallback provider used when the default is unavailable.",
     )
     # Additional providers can be loaded dynamically from YAML.
-    extra_providers: Dict[str, VisionProviderConfig] = Field(
+    extra_providers: dict[str, VisionProviderConfig] = Field(
         default_factory=dict,
         description="Dynamically loaded extra providers keyed by name.",
     )
 
     @property
-    def all_providers(self) -> Dict[str, VisionProviderConfig]:
+    def all_providers(self) -> dict[str, VisionProviderConfig]:
         """Return merged dict of all providers (default + fallback + extra)."""
-        result: Dict[str, VisionProviderConfig] = {"default": self.default}
+        result: dict[str, VisionProviderConfig] = {"default": self.default}
         if self.fallback is not None:
             result["fallback"] = self.fallback
         result.update(self.extra_providers)
@@ -194,7 +195,7 @@ class SecurityConfig(BaseSettings):
     )
 
     # --- Path whitelist ---
-    allowed_paths: List[str] = Field(
+    allowed_paths: list[str] = Field(
         default_factory=lambda: ["/tmp", "/tmp/vision_mcp", os.path.expanduser("~/vision_mcp_data")],
         description="List of directory prefixes that image files may be loaded from.",
     )
@@ -204,7 +205,7 @@ class SecurityConfig(BaseSettings):
     )
 
     # --- URL blacklist ---
-    blocked_url_patterns: List[str] = Field(
+    blocked_url_patterns: list[str] = Field(
         default_factory=lambda: [
             r"localhost",
             r"127\.0\.0\.1",
@@ -219,7 +220,7 @@ class SecurityConfig(BaseSettings):
         ],
         description="Regex patterns for URLs that must not be fetched.",
     )
-    allowed_url_schemes: Set[str] = Field(
+    allowed_url_schemes: set[str] = Field(
         default={"http", "https"},
         description="Only these URL schemes are permitted.",
     )
@@ -232,7 +233,7 @@ class SecurityConfig(BaseSettings):
 
     @field_validator("allowed_paths", mode="before")
     @classmethod
-    def _normalize_paths(cls, v: Any) -> List[str]:
+    def _normalize_paths(cls, v: Any) -> list[str]:
         """Ensure paths are expanded and absolute."""
         if isinstance(v, str):
             v = [v]
@@ -242,7 +243,7 @@ class SecurityConfig(BaseSettings):
 
     @field_validator("blocked_url_patterns", mode="before")
     @classmethod
-    def _validate_regex_patterns(cls, v: Any) -> List[str]:
+    def _validate_regex_patterns(cls, v: Any) -> list[str]:
         """Ensure every pattern compiles as a valid regex."""
         patterns = v or []
         for p in patterns:
@@ -252,7 +253,7 @@ class SecurityConfig(BaseSettings):
                 raise ValueError(f"Invalid regex pattern '{p}': {exc}")
         return patterns
 
-    def is_path_allowed(self, file_path: str | Path) -> Tuple[bool, str]:
+    def is_path_allowed(self, file_path: str | Path) -> tuple[bool, str]:
         """Check whether *file_path* falls under one of the whitelisted prefixes."""
         resolved = Path(file_path).expanduser().resolve()
         for allowed in self.allowed_paths:
@@ -264,7 +265,7 @@ class SecurityConfig(BaseSettings):
                 continue
         return False, f"Path '{resolved}' is not within any allowed directory"
 
-    def is_url_safe(self, url: str) -> Tuple[bool, str]:
+    def is_url_safe(self, url: str) -> tuple[bool, str]:
         """Check whether *url* passes scheme and blacklist checks."""
         from urllib.parse import urlparse
 
@@ -314,7 +315,7 @@ class CacheConfig(BaseSettings):
         default=os.path.expanduser("~/.cache/vision_mcp"),
         description="Directory for disk-based cache storage.",
     )
-    redis_url: Optional[str] = Field(
+    redis_url: str | None = Field(
         default=None,
         description="Redis connection URL (required when backend='redis').",
     )
@@ -371,7 +372,7 @@ class ServerConfig(BaseSettings):
         default=1,
         description="Number of worker processes (for SSE transport).",
     )
-    cors_origins: List[str] = Field(
+    cors_origins: list[str] = Field(
         default_factory=list,
         description="Allowed CORS origin patterns (only applies to SSE).",
     )
@@ -423,7 +424,7 @@ class Settings(BaseSettings):
     debug: bool = Field(default=False, description="Enable debug mode (verbose errors).")
 
     # ---- YAML config path override ----
-    config_file: Optional[str] = Field(
+    config_file: str | None = Field(
         default=None,
         description="Explicit path to YAML config file. Overrides auto-discovery.",
     )
@@ -463,7 +464,7 @@ class Settings(BaseSettings):
         env_settings: PydanticBaseSettingsSource,
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
-    ) -> Tuple[PydanticBaseSettingsSource, ...]:
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Customise loading order: env > yaml > dotenv > defaults."""
         yaml_path = _resolve_yaml_path()
         sources: list[PydanticBaseSettingsSource] = [
@@ -478,7 +479,7 @@ class Settings(BaseSettings):
         return tuple(sources)
 
     @model_validator(mode="after")
-    def _apply_debug_log_level(self) -> "Settings":
+    def _apply_debug_log_level(self) -> Settings:
         """When debug=True, force log_level to DEBUG unless explicitly set."""
         if self.debug and self.server.log_level == "INFO":
             self.server.log_level = "DEBUG"
@@ -489,7 +490,7 @@ class Settings(BaseSettings):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _resolve_yaml_path() -> Optional[FilePath]:
+def _resolve_yaml_path() -> FilePath | None:
     """
     Return the resolved YAML config file path.
 
@@ -529,7 +530,7 @@ def _resolve_yaml_path() -> Optional[FilePath]:
     return None
 
 
-def load_yaml_config(path: str | Path) -> Dict[str, Any]:
+def load_yaml_config(path: str | Path) -> dict[str, Any]:
     """Load and return a YAML file as a plain dict (safe_load)."""
     p = Path(path).expanduser()
     if not p.is_file():
@@ -575,7 +576,6 @@ def reload_settings() -> Settings:
 # SimpleConfig — flexible provider configuration for server.py
 # ---------------------------------------------------------------------------
 
-from dataclasses import dataclass, field as _dc_field
 
 
 @dataclass
@@ -662,7 +662,7 @@ class SimpleConfig:
             str(Path(p).expanduser().resolve()) for p in self.allowed_paths
         ]
 
-    def get_default_provider(self) -> Optional[ProviderConfig]:
+    def get_default_provider(self) -> ProviderConfig | None:
         """Return the default provider, or the first one if none is marked as default."""
         if not self.providers:
             return None
@@ -671,7 +671,7 @@ class SimpleConfig:
                 return p
         return self.providers[0]
 
-    def get_provider_by_name(self, name: str) -> Optional[ProviderConfig]:
+    def get_provider_by_name(self, name: str) -> ProviderConfig | None:
         """Return a provider by name, or None if not found."""
         for p in self.providers:
             if p.name == name:
@@ -681,7 +681,7 @@ class SimpleConfig:
 
 # ---- SimpleConfig singleton ----
 
-_simple_config: Optional[SimpleConfig] = None
+_simple_config: SimpleConfig | None = None
 _SIMPLE_CONFIG_YAML_PATHS = (
     "config.yaml",
     "config.yml",
@@ -690,7 +690,7 @@ _SIMPLE_CONFIG_YAML_PATHS = (
 )
 
 
-def _find_simple_config_yaml() -> Optional[Path]:
+def _find_simple_config_yaml() -> Path | None:
     env_path = os.environ.get(f"{_ENV_PREFIX}CONFIG")
     if env_path:
         p = Path(env_path).expanduser()
@@ -711,7 +711,7 @@ def _find_simple_config_yaml() -> Optional[Path]:
     return None
 
 
-def _load_simple_config(yaml_path: Optional[Path] = None) -> SimpleConfig:
+def _load_simple_config(yaml_path: Path | None = None) -> SimpleConfig:
     """Load SimpleConfig from .env → YAML → env vars (ascending priority).
 
     .env is loaded first so that YAML values using ``${VAR}`` syntax
@@ -744,7 +744,7 @@ def _resolve_env_vars(value: Any) -> Any:
     """
     if isinstance(value, str):
         import re as _re
-        def _replace(match: _re.Match) -> str:
+        def _replace(match: _re.Match[str]) -> str:
             var_name = match.group(1)
             return os.environ.get(var_name, "")
         return _re.sub(r'\$\{(\w+)\}', _replace, value)
@@ -787,7 +787,12 @@ def _apply_yaml_to_simple_config(config: SimpleConfig, path: Path) -> None:
             except (ValueError, TypeError):
                 pass
     if "allowed_paths" in data and isinstance(data["allowed_paths"], list):
-        config.allowed_paths = [str(p) for p in data["allowed_paths"]]
+        # Merge with defaults (~ and /tmp always included) to prevent users
+        # from accidentally locking themselves out of common directories.
+        home = str(Path(os.path.expanduser("~")))
+        yaml_paths = [str(p) for p in data["allowed_paths"]]
+        merged = [home] + yaml_paths
+        config.allowed_paths = merged
     if "blocked_domains" in data and isinstance(data["blocked_domains"], list):
         config.blocked_domains = [str(d) for d in data["blocked_domains"]]
 
