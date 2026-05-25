@@ -69,3 +69,4 @@ frames/
 *.whl
 
 .spec-workflow
+.claude
