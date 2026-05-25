@@ -1,21 +1,66 @@
 # Vision MCP Server Configuration
 # Copy this file to config.yaml and customize
 #
-# All values can be overridden by environment variables (higher priority).
-# You can also use a .env file in the project root.
+# 配置方式一：使用 providers 列表（推荐）
+# 支持任意 OpenAI 兼容或 Anthropic API
 
-# ─── Provider API Keys ────────────────────────────────────────────────
-# At least one API key must be configured for the server to be useful.
-dashscope_api_key: ${DASHSCOPE_API_KEY}  # Alibaba Cloud DashScope (Qwen-VL)
-openai_api_key: ${OPENAI_API_KEY}        # OpenAI (GPT-4V)
-ollama_base_url: ${OLLAMA_BASE_URL}      # Local Ollama (http://localhost:11434)
-ollama_model: ${OLLAMA_MODEL}            # e.g., llava:13b
-anthropic_api_key: ${ANTHROPIC_API_KEY}  # Anthropic (Claude 3)
+providers:
+  # 示例 1: 阿里云百炼 DashScope（OpenAI 兼容）
+  - name: dashscope
+    type: openai
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_key: ${DASHSCOPE_API_KEY}  # 从环境变量读取，或直接填写
+    model: qwen-vl-max  # 可选: qwen-vl-plus, qwen-vl-max-latest 等
+    is_default: true
 
-# ─── Model Configuration ─────────────────────────────────────────────
-dashscope_model: qwen-vl-max
-openai_model: gpt-4o
-anthropic_model: claude-3-5-sonnet-20241022
+  # 示例 2: OpenAI 官方 API
+  # - name: openai
+  #   type: openai
+  #   base_url: https://api.openai.com/v1
+  #   api_key: ${OPENAI_API_KEY}
+  #   model: gpt-4o  # 可选: gpt-4o-mini, gpt-4-turbo 等
+
+  # 示例 3: Anthropic Claude（不需要 base_url，自动使用官方 API）
+  # - name: anthropic
+  #   type: anthropic
+  #   api_key: ${ANTHROPIC_API_KEY}
+  #   model: claude-3-5-sonnet-20241022  # 可选: claude-3-opus-20240229 等
+
+  # 示例 4: 其他 OpenAI 兼容服务（如 SiliconFlow, DeepSeek 等）
+  # - name: siliconflow
+  #   type: openai
+  #   base_url: https://api.siliconflow.cn/v1
+  #   api_key: ${SILICONFLOW_API_KEY}
+  #   model: Qwen/Qwen2-VL-72B-Instruct
+
+  # 示例 5: 本地 Ollama（无需 API Key）
+  # - name: ollama
+  #   type: ollama
+  #   base_url: http://localhost:11434
+  #   api_key: ""
+  #   model: llava
+
+  # 示例 6: 本地部署的 OpenAI 兼容服务（vLLM / LM Studio / LocalAI 等，无需 API Key）
+  # - name: local-vllm
+  #   type: openai
+  #   base_url: http://localhost:8000/v1   # vLLM 默认地址
+  #   api_key: ""                           # 本地服务无需 Key，留空即可
+  #   model: Qwen/Qwen2-VL-7B-Instruct    # 你部署的模型名
+  #
+  # LM Studio 示例:
+  # - name: lm-studio
+  #   type: openai
+  #   base_url: http://localhost:1234/v1
+  #   api_key: ""
+  #   model: local-model
+
+# ─── 配置方式二：使用环境变量（适合快速测试） ──────────────────────────
+# 设置以下环境变量会自动创建一个默认 provider:
+# - VISION_MCP_PROVIDER_TYPE: openai | anthropic | ollama
+# - VISION_MCP_PROVIDER_BASE_URL: API 地址
+# - VISION_MCP_PROVIDER_API_KEY: API 密钥
+# - VISION_MCP_PROVIDER_MODEL: 模型名称
+# - VISION_MCP_PROVIDER_NAME: provider 名称（可选，默认 "default"）
 
 # ─── API Settings ────────────────────────────────────────────────────
 api_timeout: 120          # seconds

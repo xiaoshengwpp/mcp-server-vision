@@ -65,7 +65,7 @@ where python         # Windows
 
 > 上面的命令会输出 Python 的完整路径（例如 `/opt/homebrew/bin/python3` 或 `/usr/local/bin/python3`），**记下来，第三步配置 MCP 时需要用到**。
 
-### 第二步：选一个视觉模型
+### 第二步：配置视觉模型
 
 你需要至少一个能处理图片的 AI 模型 API。选你顺手的那个：
 
@@ -75,26 +75,34 @@ where python         # Windows
 | **OpenAI** | GPT-4o | 综合能力最强 | [platform.openai.com](https://platform.openai.com/api-keys) |
 | **Anthropic** | Claude 3.5 Sonnet | 细节描述出色 | [console.anthropic.com](https://console.anthropic.com/) |
 | **Ollama** | LLaVA | 本地运行，免费，无需 Key | [ollama.com](https://ollama.com/) |
+| **vLLM / LM Studio / LocalAI** | 自选 | 本地部署，免鉴权，隐私最佳 | 自行部署 |
 
-拿到 Key 后，有两种配置方式（推荐方式 A）：
+配置方式取决于你用的编辑器类型：
 
-**方式 A：直接写在 MCP 配置中（推荐，最可靠）**
+**如果你用 Claude Code（stdio 模式）** — 跳到第三步，API Key 直接写在 MCP 配置的 `env` 字段里，最简单。
 
-不需要创建任何文件，Key 直接写在第三步的 MCP 配置 JSON 的 `env` 字段里。
+**如果你用 Cursor / Windsurf / Claude Desktop（SSE 模式）** — 需要先配置 provider，再启动服务。推荐在项目目录创建 `config.yaml`：
 
-**方式 B：创建 `.env` 文件**
-
-在**你启动服务的工作目录**下创建 `.env` 文件（SSE 模式就是你在终端 `cd` 到的目录，stdio 模式就是 Claude Code 的项目根目录）：
-
-```env
-# .env 文件内容（选一个或多个）
-DASHSCOPE_API_KEY=sk-xxx
-OPENAI_API_KEY=sk-xxx
-ANTHROPIC_API_KEY=sk-ant-xxx
-
-# 如果用 Ollama 本地模型，不需要 Key，只需指定地址
-# OLLAMA_BASE_URL=http://localhost:11434
+```bash
+# 在项目目录创建 config.yaml
+cat > config.yaml << 'EOF'
+providers:
+  - name: dashscope
+    type: openai
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_key: sk-你的key
+    model: qwen-vl-max
+    is_default: true
+EOF
 ```
+
+> **其他 provider 示例：**
+> - OpenAI：`base_url: https://api.openai.com/v1`，`model: gpt-4o`
+> - Anthropic：`type: anthropic`，不需要 `base_url`，`model: claude-3-5-sonnet-20241022`
+> - 本地 vLLM：`base_url: http://localhost:8000/v1`，`api_key: ""`
+> - Ollama：`type: ollama`，`base_url: http://localhost:11434`，`api_key: ""`，`model: llava`
+>
+> 更多示例见 [配置详解](#配置详解) 部分。
 
 ### 第三步：接入你的 AI 编辑器
 
@@ -109,10 +117,13 @@ ANTHROPIC_API_KEY=sk-ant-xxx
 {
   "mcpServers": {
     "vision": {
-      "command": "python3",
+      "command": "/opt/homebrew/bin/python3",
       "args": ["-m", "vision_mcp"],
       "env": {
-        "DASHSCOPE_API_KEY": "sk-你的key"
+        "VISION_MCP_PROVIDER_TYPE": "openai",
+        "VISION_MCP_PROVIDER_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "VISION_MCP_PROVIDER_API_KEY": "sk-你的key",
+        "VISION_MCP_PROVIDER_MODEL": "qwen-vl-max"
       }
     }
   }
@@ -121,21 +132,26 @@ ANTHROPIC_API_KEY=sk-ant-xxx
 
 > **重要：** 把 `"command"` 的值替换为第一步中 `which python3` 输出的完整路径（例如 `"/opt/homebrew/bin/python3"`）。这样即使系统有多个 Python 版本也不会出错。
 
-> **stdio 模式**：编辑器自动启动和管理 MCP Server 进程，不需要手动开服务。最简单的方式。API Key 通过 `env` 字段传入，不依赖 `.env` 文件。
+> **stdio 模式**：编辑器自动启动和管理 MCP Server 进程，不需要手动开服务。最简单的方式。所有配置通过 `env` 字段传入，不需要创建 `config.yaml`。
+>
+> **其他提供商的 `env` 配置：**
+> - OpenAI：`VISION_MCP_PROVIDER_BASE_URL` 改为 `https://api.openai.com/v1`
+> - Anthropic：`VISION_MCP_PROVIDER_TYPE` 改为 `anthropic`（不需要 BASE_URL）
+> - 本地 vLLM：`VISION_MCP_PROVIDER_BASE_URL` 改为 `http://localhost:8000/v1`，`VISION_MCP_PROVIDER_API_KEY` 留空
 
 </details>
 
 <details>
 <summary><b>Cursor</b>（SSE 模式）</summary>
 
-**1. 先启动 MCP Server（开一个终端窗口，保持运行）：**
+**1. 先确保第二步中已创建 `config.yaml`，然后启动 MCP Server（终端保持运行）：**
 
 ```bash
 # macOS / Linux
 VISION_MCP_TRANSPORT=sse python3 -m vision_mcp
 
 # Windows (PowerShell)
-$env:VISION_MCP_TRANSPORT="sse"; python -m vision_mcp
+$env:VISION_MCP_TRANSPORT="sse"; python3 -m vision_mcp
 ```
 
 看到 `Starting Vision MCP Server (transport=sse)` 就说明启动成功了。**这个终端窗口不要关。**
@@ -153,14 +169,14 @@ $env:VISION_MCP_TRANSPORT="sse"; python -m vision_mcp
 <details>
 <summary><b>Windsurf</b>（SSE 模式）</summary>
 
-**1. 先启动 MCP Server（终端保持运行）：**
+**1. 先确保第二步中已创建 `config.yaml`，然后启动 MCP Server（终端保持运行）：**
 
 ```bash
 # macOS / Linux
 VISION_MCP_TRANSPORT=sse python3 -m vision_mcp
 
 # Windows (PowerShell)
-$env:VISION_MCP_TRANSPORT="sse"; python -m vision_mcp
+$env:VISION_MCP_TRANSPORT="sse"; python3 -m vision_mcp
 ```
 
 **2. 在 Windsurf 中配置：**
@@ -182,14 +198,14 @@ $env:VISION_MCP_TRANSPORT="sse"; python -m vision_mcp
 <details>
 <summary><b>Claude Desktop</b>（SSE 模式）</summary>
 
-**1. 先启动 MCP Server（终端保持运行）：**
+**1. 先确保第二步中已创建 `config.yaml`，然后启动 MCP Server（终端保持运行）：**
 
 ```bash
 # macOS / Linux
 VISION_MCP_TRANSPORT=sse python3 -m vision_mcp
 
 # Windows (PowerShell)
-$env:VISION_MCP_TRANSPORT="sse"; python -m vision_mcp
+$env:VISION_MCP_TRANSPORT="sse"; python3 -m vision_mcp
 ```
 
 **2. 编辑配置文件：**
@@ -215,7 +231,7 @@ $env:VISION_MCP_TRANSPORT="sse"; python -m vision_mcp
 任何支持 MCP 协议的客户端都可以接入。
 
 - **stdio 模式**：command 填第一步 `which python3` 得到的完整路径，args 填 `["-m", "vision_mcp"]`
-- **SSE 模式**：先启动服务（`VISION_MCP_TRANSPORT=sse python3 -m vision_mcp`），然后连接 `http://localhost:8000/sse`
+- **SSE 模式**：先创建 `config.yaml`（见第二步），启动服务（`VISION_MCP_TRANSPORT=sse python3 -m vision_mcp`），然后连接 `http://localhost:8000/sse`
 
 </details>
 
@@ -245,7 +261,80 @@ $env:VISION_MCP_TRANSPORT="sse"; python -m vision_mcp
 
 ---
 
-## 工具一览
+## 确认和切换模型
+
+### 如何确认当前使用的是哪个模型？
+
+配置完成后，在对话中让 AI 调用 `get_server_status` 工具：
+
+```
+请告诉我当前视觉服务使用的是哪个模型？
+```
+
+返回结果会清楚列出每个已注册的提供商及其模型名称，例如：
+
+```
+### Providers
+- **dashscope** (OpenAICompatibleProvider): `qwen-vl-max` *(default)*
+- **openai** (OpenAICompatibleProvider): `gpt-4o`
+```
+
+这表示当前默认使用 DashScope 的 `qwen-vl-max` 模型，同时还注册了 OpenAI 的 `gpt-4o`。
+
+### 如何切换模型？
+
+有两种方式：
+
+**方式一：改配置（全局生效）**
+
+在 `config.yaml` 中修改 provider 的 `model` 字段：
+
+```yaml
+providers:
+  - name: dashscope
+    type: openai
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_key: sk-xxx
+    model: qwen-vl-plus    # 改成你想用的模型
+    is_default: true
+```
+
+或通过环境变量配置单个 provider（会覆盖 config.yaml 中的 providers）：
+
+```bash
+VISION_MCP_PROVIDER_TYPE=openai
+VISION_MCP_PROVIDER_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+VISION_MCP_PROVIDER_API_KEY=sk-xxx
+VISION_MCP_PROVIDER_MODEL=qwen-vl-plus
+```
+
+**方式二：单次调用指定（临时切换）**
+
+每个工具都有 `model` 参数，可以在单次调用时临时指定模型：
+
+```
+用 qwen-vl-plus 模型分析这张图片：~/Desktop/photo.jpg
+```
+
+```
+用 gpt-4o-mini 识别这张发票里的文字：~/Desktop/invoice.jpg
+```
+
+AI 会在调用工具时自动传入 `model` 参数，无需改任何配置文件。
+
+### 百炼平台可用的多模态模型
+
+如果你使用阿里云百炼（DashScope），以下是支持图片理解的模型（共用同一个 API Key）：
+
+| 模型 ID | 说明 |
+|---------|------|
+| `qwen-vl-max` | 最强视觉理解，复杂场景首选（默认） |
+| `qwen-vl-plus` | 性价比高，日常分析够用 |
+| `qwen2.5-vl-72b-instruct` | 72B 参数大模型，细节更精准 |
+| `qwen2.5-vl-32b-instruct` | 32B 参数，平衡性能和成本 |
+| `qwen2.5-vl-7b-instruct` | 7B 参数，最便宜 |
+
+切换只需改 config.yaml 中对应 provider 的 `model` 字段，或在调用时指定 `model` 参数。
 
 配置成功后，你的 AI 编辑器会多出以下 6 个工具：
 
@@ -267,7 +356,8 @@ $env:VISION_MCP_TRANSPORT="sse"; python -m vision_mcp
 | `source` | 图片路径或 URL（必填） | `~/Desktop/photo.jpg` 或 `https://...` |
 | `prompt` | 你想问什么（可选） | `描述这张图片` |
 | `detail` | 精度：`low` / `auto` / `high`（可选） | `high` |
-| `provider` | 用哪个模型（可选） | `dashscope` |
+| `provider` | 用哪个提供商（可选） | `dashscope` |
+| `model` | 用哪个模型，覆盖默认模型（可选） | `qwen-vl-plus` |
 
 ### 🖼️🖼️ analyze_multiple_images — 多图对比
 
@@ -283,7 +373,8 @@ $env:VISION_MCP_TRANSPORT="sse"; python -m vision_mcp
 |------|------|------|
 | `sources` | 2-10 张图片路径或 URL（必填） | `["~/a.png", "~/b.png"]` |
 | `prompt` | 对比提示词（可选） | `找出差异` |
-| `provider` | 用哪个模型（可选） | `openai` |
+| `provider` | 用哪个提供商（可选） | `openai` |
+| `model` | 用哪个模型（可选） | `gpt-4o-mini` |
 
 ### 🎬 analyze_video — 视频分析
 
@@ -300,7 +391,8 @@ $env:VISION_MCP_TRANSPORT="sse"; python -m vision_mcp
 | `source` | 视频路径或 URL（必填） | `~/Desktop/demo.mp4` |
 | `prompt` | 分析提示词（可选） | `描述视频内容` |
 | `max_frames` | 最多提取几帧：1-50（可选，默认 10） | `20` |
-| `provider` | 用哪个模型（可选） | `anthropic` |
+| `provider` | 用哪个提供商（可选） | `anthropic` |
+| `model` | 用哪个模型（可选） | `claude-3-haiku-20240307` |
 
 ### 📝 ocr_image — 文字识别 (OCR)
 
@@ -316,7 +408,8 @@ $env:VISION_MCP_TRANSPORT="sse"; python -m vision_mcp
 |------|------|------|
 | `source` | 图片路径或 URL（必填） | `~/Desktop/receipt.jpg` |
 | `language` | 语言提示（可选） | `zh`（中文）/ `en` / `auto` |
-| `provider` | 用哪个模型（可选） | `dashscope` |
+| `provider` | 用哪个提供商（可选） | `dashscope` |
+| `model` | 用哪个模型（可选） | `qwen-vl-plus` |
 
 ### ℹ️ get_supported_formats — 查看支持的格式
 
@@ -326,16 +419,19 @@ $env:VISION_MCP_TRANSPORT="sse"; python -m vision_mcp
 
 ## Docker 部署
 
-如果你更习惯 Docker，一条命令搞定：
+如果你更习惯 Docker，两条命令搞定：
 
 ```bash
 # 构建
 docker build -t mcp-server-vision .
 
-# 运行（SSE 模式）
+# 运行（SSE 模式），通过环境变量配置 provider
 docker run -d -p 8000:8000 \
-  -e DASHSCOPE_API_KEY=sk-xxx \
   -e VISION_MCP_TRANSPORT=sse \
+  -e VISION_MCP_PROVIDER_TYPE=openai \
+  -e VISION_MCP_PROVIDER_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1 \
+  -e VISION_MCP_PROVIDER_API_KEY=sk-你的key \
+  -e VISION_MCP_PROVIDER_MODEL=qwen-vl-max \
   mcp-server-vision
 ```
 
@@ -345,24 +441,19 @@ docker run -d -p 8000:8000 \
 
 ## 配置详解
 
-大多数情况下，一个 `.env` 文件就够了。如果你需要更精细的控制，往下看。
+如果你只需要一个 provider，第二步的 `config.yaml` 已经够了。往下看了解更多高级用法。
 
-### 三种配置方式（优先级从高到低）
+### 配置加载机制
 
-```
-环境变量（export XXX=yyy）> .env 文件 > config.yaml > 内置默认值
-```
+服务启动时按以下顺序加载配置：
 
-### 方式一：`.env` 文件（最简单）
+1. **加载 `.env` 文件**（如果存在）— 将其中的值注入到环境变量，供后续 YAML 的 `${VAR}` 引用
+2. **加载 `config.yaml`**（如果存在）— 其中 `${VAR}` 会从环境变量和 `.env` 中解析
+3. **加载 `VISION_MCP_PROVIDER_*` 环境变量**（如果设置）— 创建单个 provider，**覆盖** config.yaml 中的 providers 列表
 
-在项目根目录创建 `.env`，直接写 Key：
+> 简单说：`.env` 是给 `config.yaml` 的 `${VAR}` 提供值的辅助工具，不是独立的配置方式。`VISION_MCP_PROVIDER_*` 是快速配置单个 provider 的快捷方式。
 
-```env
-DASHSCOPE_API_KEY=sk-xxx
-OPENAI_API_KEY=sk-xxx
-```
-
-### 方式二：`config.yaml` 配置文件
+### 方式一：`config.yaml`（推荐，最灵活）
 
 复制示例文件并按需修改：
 
@@ -370,18 +461,90 @@ OPENAI_API_KEY=sk-xxx
 cp config.yaml.example config.yaml
 ```
 
+**使用 providers 列表配置（推荐）**
+
+支持任意 OpenAI 兼容或 Anthropic API：
+
 ```yaml
-# 提供商 API Keys（至少填一个）
-dashscope_api_key: ${DASHSCOPE_API_KEY}    # 也可以直接写 Key，不用 ${}
-openai_api_key: ${OPENAI_API_KEY}
-anthropic_api_key: ${ANTHROPIC_API_KEY}
-ollama_base_url: ${OLLAMA_BASE_URL}
+providers:
+  # 示例 1: 阿里云百炼 DashScope（OpenAI 兼容）
+  - name: dashscope
+    type: openai
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_key: ${DASHSCOPE_API_KEY}  # 从环境变量读取，或直接填写
+    model: qwen-vl-plus  # 可以指定任何兼容的模型
+    is_default: true
 
-# 使用哪个模型（可选，有默认值）
-dashscope_model: qwen-vl-max
-openai_model: gpt-4o
-anthropic_model: claude-3-5-sonnet-20241022
+  # 示例 2: OpenAI 官方 API
+  - name: openai
+    type: openai
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    model: gpt-4o-mini
 
+  # 示例 3: Anthropic Claude
+  - name: anthropic
+    type: anthropic
+    api_key: ${ANTHROPIC_API_KEY}
+    model: claude-3-5-sonnet-20241022
+```
+
+**支持任意 OpenAI 兼容 API**
+
+任何兼容 OpenAI API 的服务都可以直接使用：
+
+```yaml
+providers:
+  - name: deepseek
+    type: openai
+    base_url: https://api.deepseek.com/v1
+    api_key: ${DEEPSEEK_API_KEY}
+    model: deepseek-chat
+    is_default: true
+
+  - name: moonshot
+    type: openai
+    base_url: https://api.moonshot.cn/v1
+    api_key: ${MOONSHOT_API_KEY}
+    model: moonshot-v1-128k-vision
+```
+
+**支持本地 Ollama**
+
+```yaml
+providers:
+  - name: local
+    type: ollama
+    base_url: http://localhost:11434
+    api_key: ""
+    model: llava
+    is_default: true
+```
+
+**支持本地部署的 OpenAI 兼容服务（vLLM / LM Studio / LocalAI 等）**
+
+这类本地服务通常不需要鉴权，`api_key` 留空即可：
+
+```yaml
+providers:
+  - name: local-vllm
+    type: openai
+    base_url: http://localhost:8000/v1    # vLLM 默认地址
+    api_key: ""                            # 本地服务无需 Key
+    model: Qwen/Qwen2-VL-7B-Instruct     # 你部署的模型名
+    is_default: true
+
+  # LM Studio 示例
+  # - name: lm-studio
+  #   type: openai
+  #   base_url: http://localhost:1234/v1
+  #   api_key: ""
+  #   model: local-model
+```
+
+**其他配置项**
+
+```yaml
 # API 调用设置
 api_timeout: 120        # 超时时间（秒）
 max_retries: 3          # 失败重试次数
@@ -409,20 +572,46 @@ log_level: INFO         # DEBUG / INFO / WARNING / ERROR
 2. 当前目录下的 `config.yaml`
 3. `~/.config/vision_mcp/config.yaml`
 
-### 方式三：环境变量
+**搭配 `.env` 文件使用（推荐）**
 
-所有配置项都有对应的环境变量：
+如果不想把 API Key 明文写在 `config.yaml` 里，可以用 `.env` 文件存放密钥：
+
+```env
+# .env（和 config.yaml 放在同一目录）
+DASHSCOPE_API_KEY=sk-你的真实key
+OPENAI_API_KEY=sk-你的真实key
+```
+
+`config.yaml` 中用 `${VAR}` 引用：
+
+```yaml
+providers:
+  - name: dashscope
+    type: openai
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_key: ${DASHSCOPE_API_KEY}   # 自动从 .env 读取
+    model: qwen-vl-max
+    is_default: true
+```
+
+> `.env` 文件只是给 `${VAR}` 提供值的辅助工具，不能单独创建 provider。必须配合 `config.yaml` 使用。
+
+### 方式二：`VISION_MCP_PROVIDER_*` 环境变量（快速配置单个 provider）
+
+通过以下环境变量可以快速配置单个 provider（会覆盖 config.yaml 中的 providers 列表）：
+
+| 环境变量 | 说明 | 示例 |
+|----------|------|------|
+| `VISION_MCP_PROVIDER_TYPE` | 端点类型 | `openai` / `anthropic` / `ollama` |
+| `VISION_MCP_PROVIDER_BASE_URL` | API 地址 | `https://api.openai.com/v1` |
+| `VISION_MCP_PROVIDER_API_KEY` | API 密钥（本地服务可留空） | `sk-xxx` |
+| `VISION_MCP_PROVIDER_MODEL` | 模型名称 | `gpt-4o` |
+| `VISION_MCP_PROVIDER_NAME` | provider 名称（可选） | `my-provider` |
+
+其他通用环境变量：
 
 | 环境变量 | 说明 | 默认值 |
 |----------|------|--------|
-| `DASHSCOPE_API_KEY` | 阿里云 DashScope Key | — |
-| `OPENAI_API_KEY` | OpenAI Key | — |
-| `ANTHROPIC_API_KEY` | Anthropic Key | — |
-| `OLLAMA_BASE_URL` | Ollama 地址 | — |
-| `OLLAMA_MODEL` | Ollama 模型 | `llava:latest` |
-| `DASHSCOPE_MODEL` | DashScope 模型 | `qwen-vl-max` |
-| `OPENAI_MODEL` | OpenAI 模型 | `gpt-4o` |
-| `ANTHROPIC_MODEL` | Anthropic 模型 | `claude-3-5-sonnet-20241022` |
 | `MAX_IMAGE_SIZE_MB` | 图片大小上限 (MB) | `20` |
 | `MAX_VIDEO_SIZE_MB` | 视频大小上限 (MB) | `2048` |
 | `MAX_VIDEO_DURATION_MINUTES` | 视频时长上限 (分钟) | `120` |
@@ -496,11 +685,32 @@ Python 路径没对上。终端执行 `which python3`（macOS/Linux）或 `where
 
 **Q: 怎么同时用多个模型？**
 
-`.env` 里填多个 Key 就行。第一个生效的会成为默认模型，你也可以在对话中指定：`用 dashscope 分析这张图片`。
+在 `config.yaml` 中配置多个 provider，每个用不同的 `name`：
+
+```yaml
+providers:
+  - name: dashscope
+    type: openai
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_key: sk-xxx
+    model: qwen-vl-max
+    is_default: true
+
+  - name: openai
+    type: openai
+    base_url: https://api.openai.com/v1
+    api_key: sk-xxx
+    model: gpt-4o
+```
+
+然后在对话中指定：`用 openai 分析这张图片`，或在工具调用时传 `provider: "openai"`。
 
 **Q: 报错 "No providers configured"？**
 
-说明没有配置任何 API Key。在 `.env` 文件里至少填一个 Key，或设置对应的环境变量。
+说明没有配置任何 provider。检查以下几点：
+1. 是否在启动目录创建了 `config.yaml`（至少包含一个 provider）
+2. 或是否设置了 `VISION_MCP_PROVIDER_*` 环境变量
+3. `config.yaml` 中的 `${VAR}` 是否能在环境变量或 `.env` 中找到对应值（缺失会变成空字符串，导致 provider 被跳过）
 
 **Q: 报错 "Path is outside allowed directories"？**
 
@@ -535,7 +745,7 @@ mcp-server-vision/
 │   └── providers/         # 视觉模型适配层
 │       ├── __init__.py
 │       └── base.py        # 所有提供商实现（OpenAI / Ollama / Anthropic）
-├── tests/                 # 测试用例（117 个）
+├── tests/                 # 测试用例（152 个）
 ├── config.yaml.example    # 配置文件示例
 ├── Dockerfile             # Docker 构建文件
 └── pyproject.toml         # 项目元数据和依赖
