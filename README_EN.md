@@ -59,7 +59,9 @@ where python               # Windows
 
 ### Step 2: Configure a Vision Model
 
-Create a `config.yaml` in your **project directory** with your chosen vision model:
+> **Claude Code users (stdio mode)** can skip this step — configuration is done via `env` fields in Step 3, no config.yaml needed.
+
+Create a `config.yaml` in the **mcp-server-vision directory** (where you ran `pip3 install .`):
 
 ```yaml
 providers:
@@ -70,14 +72,14 @@ providers:
     model: qwen-vl-max
     is_default: true             # Set as the default provider
 
-# Local directories that can be read by the server
-# Defaults to ~ and /tmp only — add other directories if your images live elsewhere
+# Extra directories the server can access (~ and /tmp are always allowed; add more here)
 allowed_paths:
   - ~/Desktop
   - ~/Documents
   - ~/Downloads
-  - /tmp
 ```
+
+> **Note:** config.yaml is loaded from the directory where you start the server. If you start the server from a different directory, place config.yaml there instead.
 
 > **Using a different provider?** Just change `base_url`, `api_key`, and `model`. The `name` can be anything.
 
@@ -86,15 +88,16 @@ allowed_paths:
 | Alibaba DashScope | `openai` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-vl-max` | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com/) |
 | OpenAI | `openai` | `https://api.openai.com/v1` | `gpt-4o` | [platform.openai.com](https://platform.openai.com/api-keys) |
 | DeepSeek | `openai` | `https://api.deepseek.com/v1` | `deepseek-chat` | [platform.deepseek.com](https://platform.deepseek.com/) |
-| Anthropic | `anthropic` | Not needed | `claude-3-5-sonnet-20241022` | [console.anthropic.com](https://console.anthropic.com/) |
+| Anthropic | `anthropic` | Default official; set for third-party proxy | `claude-3-5-sonnet-20241022` | [console.anthropic.com](https://console.anthropic.com/) |
 | vLLM / LM Studio / LocalAI | `openai` | Your endpoint (e.g. `http://localhost:8000/v1`) | Your model name | Self-hosted, leave api_key empty |
 
-**Anthropic users** — set `type` to `anthropic` and remove the `base_url` line:
+**Anthropic users** — set `type` to `anthropic`. `base_url` is optional (defaults to official API). Set it for third-party proxy services:
 
 ```yaml
 providers:
   - name: anthropic
     type: anthropic
+    # base_url: https://your-proxy/v1    # Only for third-party proxies; omit for official API
     api_key: sk-ant-your-key
     model: claude-3-5-sonnet-20241022
     is_default: true
@@ -137,7 +140,7 @@ Choose one based on your editor type:
 <details>
 <summary><b>Recommended: Cursor / Windsurf / Claude Desktop</b> (SSE mode)</summary>
 
-**1. Make sure config.yaml is created (Step 2), then start the server:**
+**1. Make sure config.yaml is created (Step 2), then start the server from the mcp-server-vision directory:**
 
 ```bash
 # macOS / Linux
@@ -182,7 +185,7 @@ If you see `Starting Vision MCP Server (transport=sse)`, it's running. **Keep th
 <details>
 <summary><b>Claude Code</b> (stdio mode — no manual server startup needed)</summary>
 
-Edit `.mcp.json` in your project root (or global `~/.claude.json`):
+No config.yaml needed — all configuration is done via the `env` fields below. Edit `.mcp.json` in your project root (or global `~/.claude.json`):
 
 ```json
 {
@@ -203,7 +206,7 @@ Edit `.mcp.json` in your project root (or global `~/.claude.json`):
 
 > Replace `"command"` with the full path from Step 1 (`which python3`).
 >
-> For other providers, just change `BASE_URL`, `API_KEY`, and `MODEL`. **Anthropic users** also change `PROVIDER_TYPE` to `anthropic` and remove the `PROVIDER_BASE_URL` line.
+> For other providers, just change `BASE_URL`, `API_KEY`, and `MODEL`. **Anthropic users** change `PROVIDER_TYPE` to `anthropic`, and either omit `PROVIDER_BASE_URL` (defaults to official API) or set it to a third-party proxy URL.
 
 stdio mode is managed by the editor automatically — no manual startup needed.
 
@@ -302,6 +305,8 @@ After configuration, your AI editor gains these tools:
 | `get_server_status` | View current config and models | — |
 | `get_supported_formats` | View supported formats | — |
 
+> All analysis tools support a `provider` parameter to specify which provider to use (matching the `name` in config.yaml). Useful when multiple providers are configured.
+
 ---
 
 ## Security
@@ -335,7 +340,7 @@ Python path mismatch. Run `which python3` and use the full path in your MCP conf
 
 **Q: Error "Path is outside allowed directories"?**
 
-The image path is not in the whitelist. Add the directory to `allowed_paths` in config.yaml.
+Home directory (`~`) and `/tmp` are always accessible. If your image is elsewhere (e.g. `/opt/images`), add that directory to `allowed_paths` in config.yaml.
 
 **Q: Video analysis fails / no frames extracted?**
 
