@@ -45,8 +45,8 @@ Even when the underlying model does support images, these tools typically lack:
 
 ```bash
 # Option A: Standard install (recommended)
-git clone https://github.com/yourusername/vision-mcp.git
-cd vision-mcp
+git clone https://github.com/xiaoshengwpp/mcp-server-vision.git
+cd mcp-server-vision
 pip install .
 
 # Option B: Development mode
