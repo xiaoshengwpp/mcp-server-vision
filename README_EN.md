@@ -2,7 +2,7 @@
 
 **English** | [中文](README.md)
 
-A production-grade MCP Server that gives AI coding assistants the ability to **see and understand images and videos**.
+Give your AI coding tools the ability to see and understand images and videos.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
@@ -10,92 +10,192 @@ A production-grade MCP Server that gives AI coding assistants the ability to **s
 
 ---
 
-## Why This Project?
+## What Is This?
 
-AI coding tools like Cursor, Windsurf, and Claude Code all support image input in their client UI. However, **whether they can actually understand images depends entirely on the underlying model's multimodal capabilities**. With multimodal models like GPT-4o or Claude 3.5 Sonnet, image recognition works out of the box. But when you connect a **custom third-party API model that only supports text** — privately deployed open-source models, internal enterprise APIs, etc. — the client has no way to process images at all.
+In one sentence: **an independent vision plugin** that connects to your AI coding tools via the [MCP protocol](https://modelcontextprotocol.io/) (Model Context Protocol).
 
-Even when the underlying model does support images, these tools typically lack:
+How it works:
 
-- **Video analysis** — auto-extract keyframes and analyze video content frame by frame
-- **Batch OCR** — extract structured text from multiple document screenshots
-- **Multi-image comparison** — compare up to 10 images side by side
-- **Independent vision model selection** — e.g., use GPT-4o for coding but Qwen-VL for Chinese image understanding
-- **Local privacy** — run vision models locally via Ollama, images never leave your machine
+```
+Your AI editor                      Vision MCP Server               Vision Model API
+(Claude Code / Cursor / ...)  →  (this project, runs locally)  →  (OpenAI / Anthropic / Qwen-VL / Ollama)
+        ↑                                                                       |
+        └───────────────────── returns analysis results ←───────────────────────┘
+```
 
-**Vision MCP Server** provides a **vision processing layer that is independent of the client's underlying model** — regardless of what model your AI tool uses, it can call dedicated vision models via the MCP protocol to understand images and videos.
+## Who Needs It?
+
+**Case 1: Your AI editor uses a text-only model**
+
+Cursor, Windsurf, Claude Code and similar tools all support sending images in their UI. But whether they can actually understand those images depends on the underlying model. If you've connected a privately deployed open-source model, an internal enterprise API, or any other text-only third-party model, images simply won't work. This plugin solves that — it calls dedicated vision models to process images, completely independent of what model your editor uses.
+
+**Case 2: Your model supports images, but you need more**
+
+Even with a multimodal model underneath, editors typically can't:
+- Analyze videos (auto-extract keyframes)
+- Do batch OCR (extract text from screenshots)
+- Compare multiple images (side-by-side comparison of up to 10 images)
+- Switch vision models independently (code with GPT-4o, understand Chinese images with Qwen-VL)
+- Keep images private (run vision models locally via Ollama, images never leave your machine)
 
 ---
 
-## What It Can Do
+## 3-Minute Setup
 
-| Tool | Function | Description |
-|------|----------|-------------|
-| `analyze_image` | Image Analysis | Analyze a single image from a local file or URL |
-| `analyze_multiple_images` | Multi-Image Compare | Compare 2–10 images side-by-side |
-| `analyze_video` | Video Analysis | Auto-extract keyframes and analyze video content |
-| `ocr_image` | OCR | Extract text from images, multi-language support |
-| `get_supported_formats` | Format Info | List supported image and video formats |
-| `get_server_status` | Server Status | View current configuration and runtime status |
+### Step 1: Install
 
----
-
-## Quick Start
-
-### 1. Install
+Requires Python 3.11 or later. Run `python3 --version` to check.
 
 ```bash
-# Option A: Standard install (recommended)
 git clone https://github.com/xiaoshengwpp/mcp-server-vision.git
 cd mcp-server-vision
-pip install .
-
-# Option B: Development mode
-pip install -e .
+pip3 install .
 ```
 
-### 2. Configure an API Key
-
-Set at least one vision model provider:
+Verify the installation:
 
 ```bash
-# Pick the provider(s) you use
-export DASHSCOPE_API_KEY="sk-xxx"       # Alibaba Cloud DashScope (Qwen-VL)
-export OPENAI_API_KEY="sk-xxx"          # OpenAI (GPT-4o)
-export ANTHROPIC_API_KEY="sk-ant-xxx"   # Anthropic (Claude 3.5 Sonnet)
-export OLLAMA_BASE_URL="http://localhost:11434"  # Ollama local (no key needed)
+# Verify the package installed correctly
+python3 -c "from vision_mcp import serve; print('✅ Installed successfully')"
+
+# Note this path — you'll need it in Step 3
+which python3        # macOS / Linux
+where python         # Windows
 ```
 
-> **Tip:** You can also use a `.env` file in the project root — the server reads it automatically.
+> The command above outputs the full path to Python (e.g. `/opt/homebrew/bin/python3` or `C:\Python311\python.exe`). **Save it — you'll need it for the MCP config in Step 3.**
 
-### 3. Connect Your MCP Client
+### Step 2: Pick a Vision Model
 
-#### Claude Code (stdio mode — recommended)
+You need at least one AI model API that can process images. Choose whichever you prefer:
 
-Edit `~/.claude.json` or your project's `.mcp.json`:
+| Provider | Model | Strengths | Get a Key |
+|----------|-------|-----------|-----------|
+| **Alibaba DashScope** | Qwen-VL | Best for Chinese, affordable | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com/) |
+| **OpenAI** | GPT-4o | Best all-around | [platform.openai.com](https://platform.openai.com/api-keys) |
+| **Anthropic** | Claude 3.5 Sonnet | Excellent detail | [console.anthropic.com](https://console.anthropic.com/) |
+| **Ollama** | LLaVA | Runs locally, free, no key | [ollama.com](https://ollama.com/) |
+
+After getting your key, there are two ways to configure it (Option A recommended):
+
+**Option A: Put keys directly in the MCP config (recommended, most reliable)**
+
+No file creation needed — just put your key in the `env` field of the MCP config JSON in Step 3.
+
+**Option B: Create a `.env` file**
+
+Create `.env` in **the working directory where you'll start the server** (for SSE mode, it's wherever you `cd` to in the terminal; for stdio mode, it's your Claude Code project root):
+
+```env
+# .env file contents (fill in one or more)
+DASHSCOPE_API_KEY=sk-xxx
+OPENAI_API_KEY=sk-xxx
+ANTHROPIC_API_KEY=sk-ant-xxx
+
+# If using Ollama locally, no key needed — just the URL:
+# OLLAMA_BASE_URL=http://localhost:11434
+```
+
+### Step 3: Connect Your AI Editor
+
+Different editors configure differently. Find yours:
+
+<details>
+<summary><b>Claude Code</b> (recommended, stdio mode)</summary>
+
+Edit `.mcp.json` in your project root (or `~/.claude.json` for global config):
 
 ```json
 {
   "mcpServers": {
     "vision": {
-      "command": "python",
+      "command": "python3",
       "args": ["-m", "vision_mcp"],
       "env": {
-        "OPENAI_API_KEY": "sk-xxx"
+        "OPENAI_API_KEY": "sk-your-key"
       }
     }
   }
 }
 ```
 
-#### Claude Desktop / Cursor / Windsurf (SSE mode)
+> **Important:** Replace the `"command"` value with the full path from `which python3` in Step 1 (e.g. `"/opt/homebrew/bin/python3"`). This prevents issues when multiple Python versions are installed.
 
-Start the server first:
+> **stdio mode**: The editor automatically starts and manages the MCP Server process. No manual server startup needed. API keys are passed via the `env` field — no `.env` file required.
+
+</details>
+
+<details>
+<summary><b>Cursor</b> (SSE mode)</summary>
+
+**1. Start the MCP Server first (in a terminal — keep it running):**
 
 ```bash
-VISION_MCP_TRANSPORT=sse python -m vision_mcp
+# macOS / Linux
+VISION_MCP_TRANSPORT=sse python3 -m vision_mcp
+
+# Windows (PowerShell)
+$env:VISION_MCP_TRANSPORT="sse"; python -m vision_mcp
 ```
 
-Then configure your client:
+You should see `Starting Vision MCP Server (transport=sse)`. **Don't close this terminal window.**
+
+**2. Configure in Cursor:**
+
+Go to `Cursor Settings` → `MCP` → click `+ Add new MCP server`:
+
+- Name: `vision`
+- Type: `sse`
+- URL: `http://localhost:8000/sse`
+
+</details>
+
+<details>
+<summary><b>Windsurf</b> (SSE mode)</summary>
+
+**1. Start the MCP Server (keep terminal running):**
+
+```bash
+# macOS / Linux
+VISION_MCP_TRANSPORT=sse python3 -m vision_mcp
+
+# Windows (PowerShell)
+$env:VISION_MCP_TRANSPORT="sse"; python -m vision_mcp
+```
+
+**2. Configure in Windsurf:**
+
+Edit `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "vision": {
+      "serverUrl": "http://localhost:8000/sse"
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Claude Desktop</b> (SSE mode)</summary>
+
+**1. Start the MCP Server (keep terminal running):**
+
+```bash
+# macOS / Linux
+VISION_MCP_TRANSPORT=sse python3 -m vision_mcp
+
+# Windows (PowerShell)
+$env:VISION_MCP_TRANSPORT="sse"; python -m vision_mcp
+```
+
+**2. Edit the config file:**
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
@@ -107,144 +207,222 @@ Then configure your client:
 }
 ```
 
-### 4. Use It
+</details>
+
+<details>
+<summary><b>Cherry Studio / Other MCP Clients</b></summary>
+
+Any MCP-compatible client can connect.
+
+- **stdio mode**: set command to the full path from `which python3`, args to `["-m", "vision_mcp"]`
+- **SSE mode**: start the server first (`VISION_MCP_TRANSPORT=sse python3 -m vision_mcp`), then connect to `http://localhost:8000/sse`
+
+</details>
+
+### Step 4: Try It Out
 
 Once configured, just mention images in your conversation:
 
 ```
-Analyze this screenshot: /path/to/error-screenshot.png
-
-What UI components are in this design mockup? Generate React code for it:
-https://example.com/mockup.png
-
-Extract all text from this document scan: /path/to/invoice.jpg
-
-Compare these two screenshots and find the differences:
-- /path/to/before.png
-- /path/to/after.png
+What does this error screenshot say? ~/Desktop/error.png
 ```
+
+```
+What UI components are in this design mockup? Generate the React code: ~/Desktop/mockup.png
+```
+
+```
+Extract all text from this invoice scan: ~/Desktop/invoice.jpg
+```
+
+```
+Compare these two screenshots — what changed?
+- ~/Desktop/v1.png
+- ~/Desktop/v2.png
+```
+
+> **Note:** Local file paths must be within the `allowed_paths` directories (defaults to `~` and `/tmp`). If a path is rejected, add its directory to `config.yaml`.
+
+---
+
+## Available Tools
+
+After setup, your AI editor gains these 6 tools:
+
+### 🖼️ analyze_image — Single Image Analysis
+
+The most commonly used tool. Give it an image, ask anything about it.
+
+**Example prompts:**
+```
+What UI components are in this screenshot?
+What does this error message mean?
+Recreate this page using HTML/CSS
+```
+
+**Parameters:**
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `source` | Image path or URL (required) | `~/Desktop/photo.jpg` or `https://...` |
+| `prompt` | Your question (optional) | `Describe this image` |
+| `detail` | Precision: `low` / `auto` / `high` (optional) | `high` |
+| `provider` | Which model to use (optional) | `openai` |
+
+### 🖼️🖼️ analyze_multiple_images — Multi-Image Comparison
+
+Analyze 2–10 images at once. Great for UI revision comparisons, A/B testing, etc.
+
+**Example prompts:**
+```
+Compare these two screenshots — what UI changes do you see?
+How do the color schemes differ across these three designs?
+```
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `sources` | 2–10 image paths or URLs (required) | `["~/a.png", "~/b.png"]` |
+| `prompt` | Comparison prompt (optional) | `Find the differences` |
+| `provider` | Which model (optional) | `openai` |
+
+### 🎬 analyze_video — Video Analysis
+
+Auto-extracts keyframes from a video and analyzes them. Perfect for screen recordings, tutorials, workflow demos.
+
+**Example prompts:**
+```
+What workflow is demonstrated in this screen recording?
+Describe the main content of this video
+```
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `source` | Video path or URL (required) | `~/Desktop/demo.mp4` |
+| `prompt` | Analysis prompt (optional) | `Describe the video` |
+| `max_frames` | Max frames to extract: 1–50 (optional, default 10) | `20` |
+| `provider` | Which model (optional) | `anthropic` |
+
+### 📝 ocr_image — Text Extraction (OCR)
+
+Extracts all visible text from an image, preserving layout, tables, and lists.
+
+**Example prompts:**
+```
+Extract all information from this receipt screenshot
+What does this scanned document say?
+```
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `source` | Image path or URL (required) | `~/Desktop/receipt.jpg` |
+| `language` | Language hint (optional) | `en` / `zh` / `auto` |
+| `provider` | Which model (optional) | `dashscope` |
+
+### ℹ️ get_supported_formats — List Supported Formats
+
+### ℹ️ get_server_status — Check Server Status
 
 ---
 
 ## Docker Deployment
 
-```bash
-# Build the image
-docker build -t vision-mcp .
+If you prefer Docker, one command does it all:
 
-# Run the container (SSE mode)
+```bash
+# Build
+docker build -t mcp-server-vision .
+
+# Run (SSE mode)
 docker run -d -p 8000:8000 \
   -e OPENAI_API_KEY=sk-xxx \
   -e VISION_MCP_TRANSPORT=sse \
-  vision-mcp
+  mcp-server-vision
 ```
 
-Client configuration:
-
-```json
-{
-  "mcpServers": {
-    "vision": {
-      "url": "http://localhost:8000/sse"
-    }
-  }
-}
-```
-
----
-
-## Tool Reference
-
-### analyze_image — Single Image Analysis
-
-```json
-{
-  "source": "/path/to/image.jpg",
-  "prompt": "Describe this image in detail",
-  "detail": "auto",
-  "provider": null
-}
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `source` | string | Yes | Image file path or URL |
-| `prompt` | string | No | Analysis prompt (default: "Describe in detail") |
-| `detail` | string | No | Detail level: `low` / `auto` / `high` |
-| `provider` | string | No | Provider name, or default if omitted |
-
-### analyze_multiple_images — Multi-Image Comparison
-
-```json
-{
-  "sources": ["/path/to/image1.jpg", "/path/to/image2.jpg"],
-  "prompt": "Compare these images and describe their differences",
-  "provider": null
-}
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `sources` | list | Yes | 2–10 image paths or URLs |
-| `prompt` | string | No | Comparison prompt |
-| `provider` | string | No | Provider name |
-
-### analyze_video — Video Analysis
-
-```json
-{
-  "source": "/path/to/video.mp4",
-  "prompt": "Describe the main content of this video",
-  "max_frames": 10,
-  "provider": null
-}
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `source` | string | Yes | Video file path or URL |
-| `prompt` | string | No | Analysis prompt |
-| `max_frames` | int | No | Max frames to extract (1–50), default 10 |
-| `provider` | string | No | Provider name |
-
-### ocr_image — Text Extraction (OCR)
-
-```json
-{
-  "source": "/path/to/document.jpg",
-  "language": "auto",
-  "provider": null
-}
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `source` | string | Yes | Image file path or URL |
-| `language` | string | No | Language hint: `auto` / `en` / `zh` etc. |
-| `provider` | string | No | Provider name |
+Then connect your client to `http://localhost:8000/sse`.
 
 ---
 
 ## Configuration
 
-### Priority Order
+For most users, a `.env` file is all you need. Read on for advanced options.
+
+### Three Ways to Configure (highest priority first)
 
 ```
-Environment variables > .env file > config.yaml > defaults
+Environment variables (export X=Y) > .env file > config.yaml > built-in defaults
 ```
 
-### Environment Variables
+### Option 1: `.env` File (Simplest)
+
+Create `.env` in the project root:
+
+```env
+DASHSCOPE_API_KEY=sk-xxx
+OPENAI_API_KEY=sk-xxx
+```
+
+### Option 2: `config.yaml` File
+
+Copy the example and customize:
+
+```bash
+cp config.yaml.example config.yaml
+```
+
+```yaml
+# Provider API Keys (fill in at least one)
+dashscope_api_key: ${DASHSCOPE_API_KEY}    # or write the key directly
+openai_api_key: ${OPENAI_API_KEY}
+anthropic_api_key: ${ANTHROPIC_API_KEY}
+ollama_base_url: ${OLLAMA_BASE_URL}
+
+# Model selection (optional, has defaults)
+dashscope_model: qwen-vl-max
+openai_model: gpt-4o
+anthropic_model: claude-3-5-sonnet-20241022
+
+# API settings
+api_timeout: 120        # timeout in seconds
+max_retries: 3          # retry count on failure
+
+# Security limits
+max_image_size_mb: 20   # max image size
+max_video_size_mb: 2048 # max video size (2GB)
+max_image_pixels: 16000000  # max pixel count (~4000×4000)
+
+# Allowed local directories (only files in these dirs can be read)
+# Note: creating config.yaml overrides the defaults (~ and /tmp)
+# Add directories you commonly use, e.g. ~/Downloads, ~/Projects
+allowed_paths:
+  - ~/Desktop
+  - ~/Documents
+  - /tmp
+
+# Transport mode
+transport: stdio        # stdio (default) or sse
+log_level: INFO         # DEBUG / INFO / WARNING / ERROR
+```
+
+Config file auto-discovery (stops at first match):
+1. Path from `VISION_MCP_CONFIG` environment variable
+2. `config.yaml` in current directory
+3. `~/.config/vision_mcp/config.yaml`
+
+### Option 3: Environment Variables
+
+Every setting has a matching environment variable:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OPENAI_API_KEY` | OpenAI API Key | — |
-| `ANTHROPIC_API_KEY` | Anthropic API Key | — |
-| `DASHSCOPE_API_KEY` | DashScope API Key | — |
-| `OLLAMA_BASE_URL` | Ollama server URL | — |
-| `OLLAMA_MODEL` | Ollama model name | `llava:latest` |
-| `OPENAI_MODEL` | OpenAI model name | `gpt-4o` |
-| `ANTHROPIC_MODEL` | Anthropic model name | `claude-3-5-sonnet-20241022` |
-| `DASHSCOPE_MODEL` | DashScope model name | `qwen-vl-max` |
+| `DASHSCOPE_API_KEY` | DashScope API key | — |
+| `OPENAI_API_KEY` | OpenAI key | — |
+| `ANTHROPIC_API_KEY` | Anthropic key | — |
+| `OLLAMA_BASE_URL` | Ollama URL | — |
+| `OLLAMA_MODEL` | Ollama model | `llava:latest` |
+| `DASHSCOPE_MODEL` | DashScope model | `qwen-vl-max` |
+| `OPENAI_MODEL` | OpenAI model | `gpt-4o` |
+| `ANTHROPIC_MODEL` | Anthropic model | `claude-3-5-sonnet-20241022` |
 | `MAX_IMAGE_SIZE_MB` | Max image size (MB) | `20` |
 | `MAX_VIDEO_SIZE_MB` | Max video size (MB) | `2048` |
 | `MAX_VIDEO_DURATION_MINUTES` | Max video duration (min) | `120` |
@@ -252,134 +430,115 @@ Environment variables > .env file > config.yaml > defaults
 | `VISION_MCP_CONFIG` | Config file path | auto-discover |
 | `VISION_MCP_LOG_LEVEL` | Log level | `INFO` |
 
-### Config File
+### stdio vs SSE: Which Transport Mode?
 
-Copy `config.yaml.example` to `config.yaml`:
+| | stdio Mode | SSE Mode |
+|---|---|---|
+| **Who starts the server** | Editor starts it automatically | You start it manually |
+| **Lifecycle** | Stops when editor closes | Independent process, runs continuously |
+| **Best for** | Claude Code | Cursor / Windsurf / Claude Desktop |
+| **Config format** | `command` + `args` | `url` |
 
-```yaml
-# Provider API Keys (at least one required)
-openai_api_key: ${OPENAI_API_KEY}
-anthropic_api_key: ${ANTHROPIC_API_KEY}
-dashscope_api_key: ${DASHSCOPE_API_KEY}
-ollama_base_url: ${OLLAMA_BASE_URL}
-
-# Model settings
-openai_model: gpt-4o
-dashscope_model: qwen-vl-max
-
-# API settings
-api_timeout: 120
-max_retries: 3
-
-# Security limits
-max_image_size_mb: 20
-max_video_size_mb: 2048
-max_image_pixels: 16000000
-
-# Allowed directories for local file access
-allowed_paths:
-  - ~/Desktop
-  - ~/Documents
-  - /tmp
-
-# Transport mode
-transport: stdio   # stdio or sse
-log_level: INFO
-```
-
-Config file auto-discovery (in priority order):
-1. Path specified by `VISION_MCP_CONFIG` environment variable
-2. `config.yaml` / `config.yml` in the current directory
-3. `~/.config/vision_mcp/config.yaml`
+Rule of thumb: **Claude Code → stdio. Everything else → SSE.**
 
 ---
 
 ## Security
 
-As an MCP Server invoked by AI clients to access local files and remote URLs, security is the top priority.
+The MCP Server is invoked by AI clients to read files and access URLs, so security is critical.
 
-### Path Traversal Protection
+**Path whitelist** — Only directories listed in `allowed_paths` can be read. Defaults to `~` (home) and `/tmp`. Path resolution follows symlinks; symlink-based escapes are blocked.
 
-Only directories explicitly listed in `allowed_paths` are accessible. Path resolution uses `Path.resolve()` which follows symlinks — symlink-based escapes are caught and blocked.
+**SSRF protection** — Automatically blocks URL requests to internal addresses:
+- Loopback (`localhost`, `127.0.0.1`, `::1`)
+- Private ranges (`10.x.x.x`, `172.16-31.x.x`, `192.168.x.x`)
+- Cloud metadata endpoints (AWS / GCP / Azure / Alibaba Cloud)
+- Non-HTTP protocols (`file://`, `ftp://`, etc.)
+- HTTP redirects are validated hop-by-hop to prevent redirect-based bypasses
 
-```yaml
-allowed_paths:
-  - ~/Desktop      # Only these directories
-  - ~/Documents    # are accessible
-```
+**Resource limits** — File size, pixel count, redirect count, and timeout are all capped to prevent resource exhaustion.
 
-### SSRF Protection
-
-The following URL targets are automatically blocked:
-
-- **Loopback:** `localhost` / `127.0.0.1` / `::1`
-- **Private ranges:** `10.0.0.0/8` / `172.16.0.0/12` / `192.168.0.0/16`
-- **Cloud metadata:** `169.254.169.254` (AWS/GCP/Azure), `metadata.google.internal`, `100.100.100.200` (Alibaba Cloud)
-- **Non-HTTP protocols:** `file://`, `ftp://`, etc.
-
-Redirects are validated hop-by-hop to prevent redirect-based SSRF bypasses.
-
-### Resource Limits
-
-| Limit | Default |
-|-------|---------|
-| Single file size | 20 MB |
-| Video size | 2 GB |
-| Image pixel count | 16 MP (4000×4000) |
-| HTTP redirects | 5 hops |
-| API timeout | 120 seconds |
-
-### MIME Type Validation
-
-Real MIME types are detected via magic bytes in file headers — file extensions are not trusted. Supported image formats: JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC, AVIF.
+**MIME validation** — Real MIME types are detected via magic bytes in file headers. Extensions are not trusted. Prevents malicious files disguised as images.
 
 ---
 
 ## Supported Formats
 
-### Images
+**Images:** JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC, HEIF, AVIF
+- Max 20 MB / 16 MP (~4000×4000)
+- Auto-downsampled above 4096px
 
-JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC, HEIF, AVIF
-
-- Max size: 20 MB
-- Max pixels: 16 MP (~4000×4000)
-- Images over 4096px are automatically downsampled
-
-### Videos
-
-MP4, AVI, MOV, MKV, WebM
-
-- Max size: 2 GB
-- Max duration: 120 minutes
-- Frame extraction requires OpenCV (`pip install opencv-python`) or ffmpeg
+**Videos:** MP4, AVI, MOV, MKV, WebM
+- Max 2 GB / 120 minutes
+- Frame extraction requires OpenCV (`pip3 install opencv-python`) or ffmpeg
 
 ---
 
-## Requirements
+## FAQ
 
-- **Python** 3.11+
-- **ffmpeg** (optional — fallback for video frame extraction)
-- **OpenCV** (optional — `pip install opencv-python`, preferred for video frames)
+**Getting `command not found: python` or `No module named vision_mcp`?**
+
+The Python path doesn't match. Run `which python3` (macOS/Linux) or `where python` (Windows) in your terminal, then put the full path in the MCP config's `command` field. For example:
+```json
+{
+  "command": "/opt/homebrew/bin/python3",
+  "args": ["-m", "vision_mcp"]
+}
+```
+
+**Getting `pip3: command not found`?**
+
+Use `python3 -m pip install .` instead of `pip3 install .`.
+
+**My model already supports images (e.g. GPT-4o). Do I still need this?**
+
+If you only need single-image analysis, maybe not. But if you need video analysis, batch OCR, multi-image comparison, model switching, or local privacy, this plugin provides capabilities your editor doesn't have natively.
+
+**How do I use multiple models at once?**
+
+Just put multiple keys in your `.env`. The first available one becomes the default. You can also specify in conversation: "analyze this image using dashscope".
+
+**Getting "No providers configured" error?**
+
+No API key found. Add at least one key to your `.env` file or set the corresponding environment variable.
+
+**Getting "Path is outside allowed directories" error?**
+
+The image path isn't in the whitelist. Add the image's directory to `allowed_paths` in `config.yaml`.
+
+**Video analysis fails / no frames extracted?**
+
+Install OpenCV or ffmpeg:
+```bash
+pip3 install opencv-python   # recommended
+# or
+brew install ffmpeg          # macOS
+apt install ffmpeg           # Ubuntu/Debian
+```
+
+**SSE mode starts but client can't connect?**
+
+Confirm the server is running (terminal should show `Starting Vision MCP Server`), and check that your firewall allows port 8000.
 
 ---
 
-## Architecture
+## Project Structure
 
 ```
-vision-mcp/
+mcp-server-vision/
 ├── src/vision_mcp/
-│   ├── server.py          # MCP Server entry point + tool definitions
-│   ├── config.py          # Configuration (Pydantic + YAML + env vars)
-│   ├── security.py        # Security (path traversal/SSRF/size limits/MIME)
-│   ├── media.py           # Media loading (image/video, base64, redirects)
+│   ├── server.py          # MCP server entry point + 6 tool definitions
+│   ├── config.py          # Configuration (YAML / .env / env vars)
+│   ├── security.py        # Security (path whitelist / SSRF / MIME detection)
+│   ├── media.py           # Media loading (image/video, base64, HTTP redirects)
 │   ├── __main__.py        # python -m entry point
-│   └── providers/         # Provider abstraction layer
-│       ├── __init__.py    # Package exports
-│       └── base.py        # All provider implementations (OpenAI/Ollama/Anthropic)
+│   └── providers/         # Vision model adapter layer
+│       ├── __init__.py
+│       └── base.py        # All provider implementations (OpenAI / Ollama / Anthropic)
 ├── tests/                 # Test suite (117 tests)
 ├── config.yaml.example    # Configuration example
-├── Dockerfile             # Docker configuration
-└── pyproject.toml         # Project metadata
+├── Dockerfile             # Docker build file
+└── pyproject.toml         # Project metadata and dependencies
 ```
 
 ---
@@ -387,55 +546,12 @@ vision-mcp/
 ## Development
 
 ```bash
-# Install dev dependencies
-pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# With coverage
-pytest --cov=vision_mcp
-
-# Lint
-ruff check src/
-
-# Type check
-mypy src/
+pip3 install -e ".[dev]"   # install dev dependencies
+pytest                     # run tests
+pytest --cov=vision_mcp    # tests + coverage
+ruff check src/            # lint
+mypy src/                  # type check
 ```
-
----
-
-## FAQ
-
-**Which MCP clients are supported?**
-
-Any client that implements the Model Context Protocol: Claude Code, Claude Desktop, Cursor, Windsurf, Cherry Studio, and more.
-
-**Which provider should I use?**
-
-It depends on your use case:
-- **OpenAI (GPT-4o)** — Best all-around, native multi-image comparison
-- **Anthropic (Claude 3.5 Sonnet)** — Excellent detail and long-context, native multi-image
-- **DashScope (Qwen-VL)** — Best Chinese language understanding, affordable
-- **Ollama (LLaVA)** — Fully local, no API key needed, privacy-friendly
-
-**Can I use multiple providers at once?**
-
-Yes. Configure multiple API keys and the first one becomes the default. Use the `provider` parameter in tool calls to select a specific provider.
-
-**What do I need for video analysis?**
-
-Install `opencv-python` (recommended) or make sure `ffmpeg` is available:
-```bash
-pip install opencv-python
-# or
-brew install ffmpeg   # macOS
-apt install ffmpeg    # Ubuntu/Debian
-```
-
-**Getting "No providers configured" error?**
-
-You need at least one API key. Set it as an environment variable or in a `.env` file.
 
 ---
 
@@ -447,7 +563,7 @@ You need at least one API key. Set it as an environment variable or in a `.env` 
 
 ## Acknowledgments
 
-- [Model Context Protocol](https://modelcontextprotocol.io/) — Standardized protocol for AI tools
+- [Model Context Protocol](https://modelcontextprotocol.io/) — MCP protocol specification
 - [FastMCP](https://github.com/jlowin/fastmcp) — MCP Server framework
 - [httpx](https://www.python-httpx.org/) — Async HTTP client
 - [Pillow](https://pillow.readthedocs.io/) — Image processing library
