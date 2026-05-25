@@ -572,38 +572,58 @@ def reload_settings() -> Settings:
 
 
 # ---------------------------------------------------------------------------
-# SimpleConfig — flat YAML + env-based configuration for server.py
+# SimpleConfig — flexible provider configuration for server.py
 # ---------------------------------------------------------------------------
 
 from dataclasses import dataclass, field as _dc_field
 
 
 @dataclass
+class ProviderConfig:
+    """Configuration for a single vision provider."""
+
+    name: str  # unique identifier, e.g. "my-openai", "dashscope"
+    type: str  # "openai", "anthropic", or "ollama"
+    base_url: str = ""  # API endpoint URL (required for openai/ollama, ignored for anthropic)
+    api_key: str = ""  # API key (not required for ollama)
+    model: str = ""  # model identifier
+    is_default: bool = False  # whether this is the default provider
+
+    def __post_init__(self) -> None:
+        self.name = self.name.strip()
+        self.type = self.type.strip().lower()
+        self.base_url = self.base_url.strip().rstrip("/")
+        self.api_key = self.api_key.strip()
+        self.model = self.model.strip()
+
+        if self.type not in ("openai", "anthropic", "ollama"):
+            raise ValueError(f"Provider type must be 'openai', 'anthropic', or 'ollama', got '{self.type}'")
+        if self.type in ("openai", "ollama") and not self.base_url:
+            raise ValueError(f"Provider '{self.name}' (type={self.type}) must have a base_url")
+        if not self.model:
+            raise ValueError(f"Provider '{self.name}' must have a model")
+        # Note: api_key is not enforced for any type — local services (vLLM,
+        # LM Studio, LocalAI) may not require authentication.  Anthropic's
+        # official API will reject requests without a valid key at runtime.
+
+
+@dataclass
 class SimpleConfig:
     """
-    Simplified configuration loaded from flat YAML and environment variables.
+    Flexible configuration loaded from YAML and environment variables.
 
-    Designed for use by ``server.py`` — provides the flat attribute access
-    (e.g. ``config.dashscope_api_key``) expected by tool implementations.
+    Designed for use by ``server.py`` — supports user-defined providers
+    with custom URLs, API keys, and models.
 
     Loading priority (highest first):
-      1. Environment variables
+      1. Environment variables (single provider mode)
       2. ``.env`` file
       3. YAML config file
       4. Defaults
     """
 
-    # Provider API Keys
-    dashscope_api_key: str = ""
-    openai_api_key: str = ""
-    ollama_base_url: str = ""
-    ollama_model: str = "llava:latest"
-    anthropic_api_key: str = ""
-
-    # Model Configuration
-    dashscope_model: str = "qwen-vl-max"
-    openai_model: str = "gpt-4o"
-    anthropic_model: str = "claude-3-5-sonnet-20241022"
+    # Provider list (user-defined)
+    providers: list[ProviderConfig] = _dc_field(default_factory=list)
 
     # API Settings
     api_timeout: float = 120.0
@@ -642,6 +662,22 @@ class SimpleConfig:
             str(Path(p).expanduser().resolve()) for p in self.allowed_paths
         ]
 
+    def get_default_provider(self) -> Optional[ProviderConfig]:
+        """Return the default provider, or the first one if none is marked as default."""
+        if not self.providers:
+            return None
+        for p in self.providers:
+            if p.is_default:
+                return p
+        return self.providers[0]
+
+    def get_provider_by_name(self, name: str) -> Optional[ProviderConfig]:
+        """Return a provider by name, or None if not found."""
+        for p in self.providers:
+            if p.name == name:
+                return p
+        return None
+
 
 # ---- SimpleConfig singleton ----
 
@@ -676,17 +712,21 @@ def _find_simple_config_yaml() -> Optional[Path]:
 
 
 def _load_simple_config(yaml_path: Optional[Path] = None) -> SimpleConfig:
-    """Load SimpleConfig from YAML → .env → env vars (ascending priority)."""
+    """Load SimpleConfig from .env → YAML → env vars (ascending priority).
+
+    .env is loaded first so that YAML values using ``${VAR}`` syntax
+    can be resolved against both .env and system environment variables.
+    """
     config = SimpleConfig()
 
-    # 1. Load from YAML
+    # 1. Load .env into os.environ (lowest priority, uses setdefault)
+    _apply_dotenv_to_simple_config(config)
+
+    # 2. Load from YAML (with ${VAR} substitution from os.environ)
     if yaml_path is None:
         yaml_path = _find_simple_config_yaml()
     if yaml_path is not None:
         _apply_yaml_to_simple_config(config, yaml_path)
-
-    # 2. Load from .env
-    _apply_dotenv_to_simple_config(config)
 
     # 3. Load from environment variables (highest priority)
     _apply_env_to_simple_config(config)
@@ -695,38 +735,80 @@ def _load_simple_config(yaml_path: Optional[Path] = None) -> SimpleConfig:
     return config
 
 
+def _resolve_env_vars(value: Any) -> Any:
+    """Recursively resolve ``${VAR}`` references in strings using os.environ.
+
+    - ``${VAR}`` → value of os.environ["VAR"], or "" if not set
+    - Non-string values are returned as-is
+    - Lists and dicts are processed recursively
+    """
+    if isinstance(value, str):
+        import re as _re
+        def _replace(match: _re.Match) -> str:
+            var_name = match.group(1)
+            return os.environ.get(var_name, "")
+        return _re.sub(r'\$\{(\w+)\}', _replace, value)
+    elif isinstance(value, list):
+        return [_resolve_env_vars(item) for item in value]
+    elif isinstance(value, dict):
+        return {k: _resolve_env_vars(v) for k, v in value.items()}
+    return value
+
+
 def _apply_yaml_to_simple_config(config: SimpleConfig, path: Path) -> None:
     with open(path, encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
     if not isinstance(data, dict):
         return
 
-    _str_keys = {
-        "dashscope_api_key", "openai_api_key", "ollama_base_url", "ollama_model",
-        "anthropic_api_key", "dashscope_model", "openai_model", "anthropic_model",
-        "log_level", "transport",
-    }
+    # Resolve ${VAR} references in all values
+    data = _resolve_env_vars(data)
+
     _float_keys = {
         "api_timeout", "retry_delay", "max_image_size_mb",
         "max_video_size_mb", "max_video_duration_minutes",
     }
     _int_keys = {"max_retries", "max_image_pixels"}
+    _str_keys = {"log_level", "transport"}
 
     for key in _str_keys:
         if key in data and data[key] is not None:
-            val = str(data[key])
-            if not val.startswith("${"):
-                setattr(config, key, val)
+            setattr(config, key, str(data[key]))
     for key in _float_keys:
         if key in data and data[key] is not None:
-            setattr(config, key, float(data[key]))
+            try:
+                setattr(config, key, float(data[key]))
+            except (ValueError, TypeError):
+                pass
     for key in _int_keys:
         if key in data and data[key] is not None:
-            setattr(config, key, int(data[key]))
+            try:
+                setattr(config, key, int(data[key]))
+            except (ValueError, TypeError):
+                pass
     if "allowed_paths" in data and isinstance(data["allowed_paths"], list):
         config.allowed_paths = [str(p) for p in data["allowed_paths"]]
     if "blocked_domains" in data and isinstance(data["blocked_domains"], list):
         config.blocked_domains = [str(d) for d in data["blocked_domains"]]
+
+    # Parse providers list
+    if "providers" in data and isinstance(data["providers"], list):
+        config.providers = []
+        for p_data in data["providers"]:
+            if not isinstance(p_data, dict):
+                continue
+            try:
+                provider = ProviderConfig(
+                    name=p_data.get("name", ""),
+                    type=p_data.get("type", "openai"),
+                    base_url=p_data.get("base_url", ""),
+                    api_key=p_data.get("api_key", ""),
+                    model=p_data.get("model", ""),
+                    is_default=p_data.get("is_default", False),
+                )
+                config.providers.append(provider)
+            except ValueError as e:
+                print(f"[vision_mcp] WARNING: Skipping invalid provider: {e}", file=sys.stderr)
 
 
 def _apply_dotenv_to_simple_config(config: SimpleConfig) -> None:
@@ -754,14 +836,6 @@ def _apply_dotenv_to_simple_config(config: SimpleConfig) -> None:
 
 def _apply_env_to_simple_config(config: SimpleConfig) -> None:
     _env_mapping: list[tuple[str, str, type]] = [
-        ("dashscope_api_key", "DASHSCOPE_API_KEY", str),
-        ("openai_api_key", "OPENAI_API_KEY", str),
-        ("ollama_base_url", "OLLAMA_BASE_URL", str),
-        ("ollama_model", "OLLAMA_MODEL", str),
-        ("anthropic_api_key", "ANTHROPIC_API_KEY", str),
-        ("dashscope_model", "DASHSCOPE_MODEL", str),
-        ("openai_model", "OPENAI_MODEL", str),
-        ("anthropic_model", "ANTHROPIC_MODEL", str),
         ("api_timeout", "VISION_MCP_API_TIMEOUT", float),
         ("max_retries", "VISION_MCP_MAX_RETRIES", int),
         ("retry_delay", "VISION_MCP_RETRY_DELAY", float),
@@ -779,6 +853,23 @@ def _apply_env_to_simple_config(config: SimpleConfig) -> None:
                 setattr(config, attr, converter(val))
             except (ValueError, TypeError):
                 pass
+
+    # Support single provider via environment variables
+    provider_type = os.environ.get("VISION_MCP_PROVIDER_TYPE", "").strip().lower()
+    if provider_type:
+        try:
+            provider = ProviderConfig(
+                name=os.environ.get("VISION_MCP_PROVIDER_NAME", "default").strip(),
+                type=provider_type,
+                base_url=os.environ.get("VISION_MCP_PROVIDER_BASE_URL", "").strip(),
+                api_key=os.environ.get("VISION_MCP_PROVIDER_API_KEY", "").strip(),
+                model=os.environ.get("VISION_MCP_PROVIDER_MODEL", "").strip(),
+                is_default=True,
+            )
+            # Replace existing providers with the env-defined one
+            config.providers = [provider]
+        except ValueError as e:
+            print(f"[vision_mcp] WARNING: Invalid VISION_MCP_PROVIDER_* config: {e}", file=sys.stderr)
 
 
 def get_config() -> SimpleConfig:

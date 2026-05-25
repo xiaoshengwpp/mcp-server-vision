@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import abc
 import asyncio
-import json
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -38,6 +37,7 @@ class BaseProvider(abc.ABC):
         image_data: str,
         prompt: str,
         detail: str = "auto",
+        model_override: str | None = None,
     ) -> AnalysisResult:
         """Analyze an image and return structured result."""
         ...
@@ -47,6 +47,7 @@ class BaseProvider(abc.ABC):
         image_data_list: list[str],
         prompt: str,
         detail: str = "auto",
+        model_override: str | None = None,
     ) -> AnalysisResult:
         """Analyze multiple images in a single request.
 
@@ -58,7 +59,7 @@ class BaseProvider(abc.ABC):
         texts: list[str] = []
         for i, data in enumerate(image_data_list, 1):
             single_prompt = f"Image {i} of {len(image_data_list)}: {prompt}"
-            result = await self.analyze(data, single_prompt, detail)
+            result = await self.analyze(data, single_prompt, detail, model_override)
             texts.append(f"## Image {i}\n{result.text}")
         combined = "\n\n".join(texts)
         return AnalysisResult(
@@ -114,18 +115,19 @@ class OpenAICompatibleProvider(BaseProvider):
         image_data: str,
         prompt: str,
         detail: str = "auto",
+        model_override: str | None = None,
     ) -> AnalysisResult:
         """Analyze image via OpenAI-compatible chat completions API."""
-        
+
         url = f"{self.base_url}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        
+
         # Build message with image
         payload = {
-            "model": self.model,
+            "model": model_override or self.model,
             "messages": [
                 {
                     "role": "user",
@@ -164,7 +166,7 @@ class OpenAICompatibleProvider(BaseProvider):
 
                 return AnalysisResult(
                     text=text,
-                    model=self.model,
+                    model=model_override or self.model,
                     provider=self.name,
                     usage=usage,
                     raw_response=data,
@@ -183,6 +185,7 @@ class OpenAICompatibleProvider(BaseProvider):
         image_data_list: list[str],
         prompt: str,
         detail: str = "auto",
+        model_override: str | None = None,
     ) -> AnalysisResult:
         """Send multiple images in a single OpenAI-compatible request."""
         url = f"{self.base_url}/chat/completions"
@@ -204,7 +207,7 @@ class OpenAICompatibleProvider(BaseProvider):
         content.append({"type": "text", "text": prompt})
 
         payload = {
-            "model": self.model,
+            "model": model_override or self.model,
             "messages": [{"role": "user", "content": content}],
             "max_tokens": 2000,
         }
@@ -227,7 +230,7 @@ class OpenAICompatibleProvider(BaseProvider):
 
                 return AnalysisResult(
                     text=text,
-                    model=self.model,
+                    model=model_override or self.model,
                     provider=self.name,
                     usage=usage,
                     raw_response=data,
@@ -271,12 +274,13 @@ class OllamaProvider(BaseProvider):
         image_data: str,
         prompt: str,
         detail: str = "auto",
+        model_override: str | None = None,
     ) -> AnalysisResult:
         """Analyze image via Ollama API."""
-        
+
         url = f"{self.base_url}/api/generate"
         payload = {
-            "model": self.model,
+            "model": model_override or self.model,
             "prompt": prompt,
             "images": [image_data],
             "stream": False,
@@ -296,7 +300,7 @@ class OllamaProvider(BaseProvider):
 
                 return AnalysisResult(
                     text=text,
-                    model=self.model,
+                    model=model_override or self.model,
                     provider=self.name,
                     usage=None,
                     raw_response=data,
@@ -337,18 +341,19 @@ class AnthropicProvider(BaseProvider):
         image_data: str,
         prompt: str,
         detail: str = "auto",
+        model_override: str | None = None,
     ) -> AnalysisResult:
         """Analyze image via Anthropic Messages API."""
-        
+
         url = "https://api.anthropic.com/v1/messages"
         headers = {
             "x-api-key": self.api_key,
             "anthropic-version": "2023-06-01",
             "Content-Type": "application/json",
         }
-        
+
         payload = {
-            "model": self.model,
+            "model": model_override or self.model,
             "max_tokens": 2000,
             "messages": [
                 {
@@ -391,7 +396,7 @@ class AnthropicProvider(BaseProvider):
 
                 return AnalysisResult(
                     text=text,
-                    model=self.model,
+                    model=model_override or self.model,
                     provider=self.name,
                     usage=usage,
                     raw_response=data,
@@ -410,6 +415,7 @@ class AnthropicProvider(BaseProvider):
         image_data_list: list[str],
         prompt: str,
         detail: str = "auto",
+        model_override: str | None = None,
     ) -> AnalysisResult:
         """Send multiple images in a single Anthropic Messages API request."""
         url = "https://api.anthropic.com/v1/messages"
@@ -433,7 +439,7 @@ class AnthropicProvider(BaseProvider):
         content.append({"type": "text", "text": prompt})
 
         payload = {
-            "model": self.model,
+            "model": model_override or self.model,
             "max_tokens": 2000,
             "messages": [{"role": "user", "content": content}],
         }
@@ -459,7 +465,7 @@ class AnthropicProvider(BaseProvider):
 
                 return AnalysisResult(
                     text=text,
-                    model=self.model,
+                    model=model_override or self.model,
                     provider=self.name,
                     usage=usage,
                     raw_response=data,

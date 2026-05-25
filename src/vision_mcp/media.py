@@ -591,6 +591,8 @@ def _extract_frames_ffmpeg_fallback(
     """Fallback frame extraction using ffmpeg CLI (if available).
 
     Uses subprocess to call ffmpeg directly without OpenCV dependency.
+    First probes video duration, then calculates an appropriate fps to
+    extract evenly-spaced frames — works correctly for short videos too.
     """
     import subprocess
     import tempfile
@@ -605,26 +607,39 @@ def _extract_frames_ffmpeg_fallback(
     tmp_dir = tempfile.mkdtemp(prefix="vision_mcp_frames_")
 
     try:
-        # Get video info
-        probe = subprocess.run(
-            [
-                "ffprobe", "-v", "error", "-select_streams", "v:0",
-                "-show_entries", "stream=nb_read_frames,r_frame_rate",
-                "-of", "csv=p=0",
-                video_path,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        # Step 1: Get video duration via ffprobe
+        duration_sec = 0.0
+        try:
+            probe = subprocess.run(
+                [
+                    "ffprobe", "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "csv=p=0",
+                    video_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if probe.returncode == 0 and probe.stdout.strip():
+                duration_sec = float(probe.stdout.strip())
+        except (subprocess.TimeoutExpired, ValueError):
+            pass
 
-        # Fallback: extract frames at fixed intervals
-        # Use ffmpeg to extract N evenly-spaced frames
+        # Step 2: Calculate fps for evenly-spaced frame extraction
+        # If duration is unknown or very short, default to 1 frame per 2 seconds
+        if duration_sec > 0 and num_frames > 1:
+            interval = duration_sec / num_frames
+            fps_expr = f"fps=1/{interval:.4f}" if interval >= 1 else f"fps={1/interval:.4f}"
+        else:
+            fps_expr = "fps=1/2"  # 1 frame per 2 seconds as safe fallback
+
+        # Step 3: Extract frames
         subprocess.run(
             [
                 "ffmpeg",
                 "-i", video_path,
-                "-vf", f"fps=1/60,scale=iw:ih",  # 1 frame per 60 seconds
+                "-vf", f"{fps_expr},scale=iw:ih",
                 "-frames:v", str(num_frames),
                 "-q:v", "2",
                 f"{tmp_dir}/frame_%04d.jpg",

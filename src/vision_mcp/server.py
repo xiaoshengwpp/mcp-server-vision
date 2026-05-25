@@ -34,62 +34,56 @@ def _get_security_config() -> _SecurityConfig:
     config = get_config()
     return _SecurityConfig(
         allowed_paths=config.allowed_paths,
+        max_file_size=int(max(config.max_image_size_mb, config.max_video_size_mb) * 1024 * 1024),
+        max_image_pixels=config.max_image_pixels,
     )
 
 
 def initialize_providers() -> None:
     """Initialize providers from config."""
     config = get_config()
-    
-    # OpenAI-compatible provider (DashScope, OpenAI, etc.)
-    if config.dashscope_api_key:
-        provider = OpenAICompatibleProvider(
-            name="dashscope",
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-            api_key=config.dashscope_api_key,
-            model=config.dashscope_model,
-            timeout=config.api_timeout,
-            max_retries=config.max_retries,
-        )
-        registry.register(provider, default=True)
-        logger.info(f"Registered DashScope provider: {config.dashscope_model}")
-    
-    if config.openai_api_key:
-        provider = OpenAICompatibleProvider(
-            name="openai",
-            base_url="https://api.openai.com/v1",
-            api_key=config.openai_api_key,
-            model=config.openai_model,
-            timeout=config.api_timeout,
-            max_retries=config.max_retries,
-        )
-        registry.register(provider, default=not config.dashscope_api_key)
-        logger.info(f"Registered OpenAI provider: {config.openai_model}")
-    
-    # Ollama (if configured)
-    if config.ollama_base_url:
-        provider = OllamaProvider(
-            base_url=config.ollama_base_url,
-            model=config.ollama_model,
-            timeout=config.api_timeout,
-            max_retries=config.max_retries,
-        )
-        registry.register(provider)
-        logger.info(f"Registered Ollama provider: {config.ollama_model}")
-    
-    # Anthropic (if configured)
-    if config.anthropic_api_key:
-        provider = AnthropicProvider(
-            api_key=config.anthropic_api_key,
-            model=config.anthropic_model,
-            timeout=config.api_timeout,
-            max_retries=config.max_retries,
-        )
-        registry.register(provider)
-        logger.info(f"Registered Anthropic provider: {config.anthropic_model}")
-    
+
+    for p_config in config.providers:
+        try:
+            if p_config.type == "openai":
+                provider = OpenAICompatibleProvider(
+                    name=p_config.name,
+                    base_url=p_config.base_url,
+                    api_key=p_config.api_key,
+                    model=p_config.model,
+                    timeout=config.api_timeout,
+                    max_retries=config.max_retries,
+                )
+                registry.register(provider, default=p_config.is_default)
+                logger.info(f"Registered OpenAI-compatible provider: {p_config.name} ({p_config.model})")
+
+            elif p_config.type == "anthropic":
+                provider = AnthropicProvider(
+                    name=p_config.name,
+                    api_key=p_config.api_key,
+                    model=p_config.model,
+                    timeout=config.api_timeout,
+                    max_retries=config.max_retries,
+                )
+                registry.register(provider, default=p_config.is_default)
+                logger.info(f"Registered Anthropic provider: {p_config.name} ({p_config.model})")
+
+            elif p_config.type == "ollama":
+                provider = OllamaProvider(
+                    name=p_config.name,
+                    base_url=p_config.base_url,
+                    model=p_config.model,
+                    timeout=config.api_timeout,
+                    max_retries=config.max_retries,
+                )
+                registry.register(provider, default=p_config.is_default)
+                logger.info(f"Registered Ollama provider: {p_config.name} ({p_config.model})")
+
+        except Exception as e:
+            logger.error(f"Failed to register provider '{p_config.name}': {e}")
+
     if not registry.list_providers():
-        logger.warning("No providers configured! Set API keys in environment or .env file")
+        logger.warning("No providers configured! Add providers to config.yaml or set VISION_MCP_PROVIDER_* env vars")
 
 
 @mcp.tool()
@@ -98,6 +92,7 @@ async def analyze_image(
     prompt: Annotated[str, Field(description="Analysis prompt", default="Describe this image in detail")] = "Describe this image in detail",
     detail: Annotated[str, Field(description="Detail level: low, auto, high", default="auto")] = "auto",
     provider: Annotated[str | None, Field(description="Provider name (optional)", default=None)] = None,
+    model: Annotated[str | None, Field(description="Model name override (optional, e.g. qwen-vl-plus, gpt-4o-mini)", default=None)] = None,
 ) -> str:
     """
     Analyze a single image using vision AI.
@@ -121,8 +116,8 @@ async def analyze_image(
         prov = registry.get(provider)
 
         # Analyze
-        logger.info(f"Analyzing with {prov.name}...")
-        result = await prov.analyze(image_payload.data, prompt, detail)
+        logger.info(f"Analyzing with {prov.name} (model={model or prov.model})...")
+        result = await prov.analyze(image_payload.data, prompt, detail=detail, model_override=model)
 
         return result.text
 
@@ -136,6 +131,7 @@ async def analyze_multiple_images(
     sources: Annotated[list[str], Field(description="List of image sources (local paths or URLs)", min_length=2, max_length=10)],
     prompt: Annotated[str, Field(description="Comparison prompt", default="Compare these images and describe their differences")] = "Compare these images and describe their differences",
     provider: Annotated[str | None, Field(description="Provider name (optional)", default=None)] = None,
+    model: Annotated[str | None, Field(description="Model name override (optional)", default=None)] = None,
 ) -> str:
     """
     Compare multiple images using vision AI.
@@ -166,9 +162,9 @@ async def analyze_multiple_images(
         prov = registry.get(provider)
 
         # Use native multi-image support when available
-        logger.info(f"Analyzing {len(images_data)} images with {prov.name}...")
+        logger.info(f"Analyzing {len(images_data)} images with {prov.name} (model={model or prov.model})...")
         base64_list = [img.data for img in images_data]
-        result = await prov.analyze_multiple(base64_list, prompt)
+        result = await prov.analyze_multiple(base64_list, prompt, model_override=model)
 
         return result.text
 
@@ -183,6 +179,7 @@ async def analyze_video(
     prompt: Annotated[str, Field(description="Analysis prompt", default="Describe this video in detail")] = "Describe this video in detail",
     max_frames: Annotated[int, Field(description="Maximum frames to analyze", default=10, ge=1, le=50)] = 10,
     provider: Annotated[str | None, Field(description="Provider name (optional)", default=None)] = None,
+    model: Annotated[str | None, Field(description="Model name override (optional)", default=None)] = None,
 ) -> str:
     """
     Analyze a video using vision AI.
@@ -215,7 +212,7 @@ async def analyze_video(
         for i, frame in enumerate(video.frames, 1):
             logger.info(f"Analyzing frame {i}/{len(video.frames)} (timestamp: {frame.timestamp_sec:.1f}s)...")
             frame_prompt = f"Frame {i}/{len(video.frames)}: {prompt}"
-            result = await prov.analyze(frame.data, frame_prompt)
+            result = await prov.analyze(frame.data, frame_prompt, model_override=model)
             results.append(f"## Frame {i} (t={frame.timestamp_sec:.1f}s)\n{result.text}")
 
         return "\n\n".join(results)
@@ -230,6 +227,7 @@ async def ocr_image(
     source: Annotated[str, Field(description="Image source: local path or URL")],
     language: Annotated[str, Field(description="OCR language hint", default="auto")] = "auto",
     provider: Annotated[str | None, Field(description="Provider name (optional)", default=None)] = None,
+    model: Annotated[str | None, Field(description="Model name override (optional)", default=None)] = None,
 ) -> str:
     """
     Extract text from an image using vision AI (OCR).
@@ -266,8 +264,8 @@ Requirements:
 Extract the text now:"""
 
         # Analyze
-        logger.info(f"Performing OCR with {prov.name}...")
-        result = await prov.analyze(image_payload.data, prompt)
+        logger.info(f"Performing OCR with {prov.name} (model={model or prov.model})...")
+        result = await prov.analyze(image_payload.data, prompt, model_override=model)
 
         return result.text
 
@@ -329,7 +327,17 @@ async def get_server_status() -> str:
     config = get_config()
     providers_list = registry.list_providers()
     default_provider = registry.default
-    
+
+    # Build provider detail lines with model names
+    provider_details = []
+    for name in providers_list:
+        prov = registry.get(name)
+        model_name = getattr(prov, 'model', 'unknown')
+        prov_type = prov.__class__.__name__
+        is_default = " *(default)*" if name == default_provider else ""
+        provider_details.append(f"- **{name}** ({prov_type}): `{model_name}`{is_default}")
+    provider_detail_str = "\n".join(provider_details) if provider_details else "(none configured)"
+
     status = """## Vision MCP Server Status
 
 ### Configuration
@@ -338,24 +346,17 @@ async def get_server_status() -> str:
 - **API Timeout**: {api_timeout}s
 - **Max Retries**: {max_retries}
 
+### Providers
+{provider_details}
+
 ### Security
 - **Max Image Size**: {max_image_size_mb}MB
 - **Max Video Size**: {max_video_size_mb}MB
 - **Max Video Duration**: {max_video_duration} min
 - **Max Image Pixels**: {max_image_pixels:,}
 - **Allowed Paths**: {allowed_paths}
-
-### Providers
-- **Total**: {provider_count}
-- **Default**: {default_provider}
-- **Available**: {providers}
-
-### API Keys Configured
-- DashScope: {dashscope_configured}
-- OpenAI: {openai_configured}
-- Ollama: {ollama_configured}
-- Anthropic: {anthropic_configured}
 """.format(
+        provider_details=provider_detail_str,
         log_level=config.log_level,
         api_timeout=config.api_timeout,
         max_retries=config.max_retries,
@@ -364,15 +365,8 @@ async def get_server_status() -> str:
         max_video_duration=config.max_video_duration_minutes,
         max_image_pixels=config.max_image_pixels,
         allowed_paths=", ".join(str(p) for p in config.allowed_paths) or "(none)",
-        provider_count=len(providers_list),
-        default_provider=default_provider or "(none)",
-        providers=", ".join(providers_list) or "(none)",
-        dashscope_configured="✅" if config.dashscope_api_key else "❌",
-        openai_configured="✅" if config.openai_api_key else "❌",
-        ollama_configured="✅" if config.ollama_base_url else "❌",
-        anthropic_configured="✅" if config.anthropic_api_key else "❌",
     )
-    
+
     return status
 
 
