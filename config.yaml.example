@@ -1,0 +1,52 @@
+# Vision MCP Server Configuration
+# Copy this file to config.yaml and customize
+#
+# All values can be overridden by environment variables (higher priority).
+# You can also use a .env file in the project root.
+
+# ─── Provider API Keys ────────────────────────────────────────────────
+# At least one API key must be configured for the server to be useful.
+dashscope_api_key: ${DASHSCOPE_API_KEY}  # Alibaba Cloud DashScope (Qwen-VL)
+openai_api_key: ${OPENAI_API_KEY}        # OpenAI (GPT-4V)
+ollama_base_url: ${OLLAMA_BASE_URL}      # Local Ollama (http://localhost:11434)
+ollama_model: ${OLLAMA_MODEL}            # e.g., llava:13b
+anthropic_api_key: ${ANTHROPIC_API_KEY}  # Anthropic (Claude 3)
+
+# ─── Model Configuration ─────────────────────────────────────────────
+dashscope_model: qwen-vl-max
+openai_model: gpt-4o
+anthropic_model: claude-3-5-sonnet-20241022
+
+# ─── API Settings ────────────────────────────────────────────────────
+api_timeout: 120          # seconds
+max_retries: 3
+retry_delay: 2.0          # base delay; exponential backoff applied
+
+# ─── Security Limits ─────────────────────────────────────────────────
+max_image_size_mb: 20
+max_video_size_mb: 2048   # 2 GB
+max_video_duration_minutes: 120
+max_image_pixels: 16000000 # 16 MP
+
+# ─── Allowed Paths (local file access) ───────────────────────────────
+# Only files under these directories can be read by the server.
+allowed_paths:
+  - /Users/xcode/Desktop
+  - /Users/xcode/Documents
+  - /tmp
+
+# ─── Blocked Domains (SSRF protection) ───────────────────────────────
+blocked_domains:
+  - localhost
+  - 127.0.0.1
+  - 0.0.0.0
+  - ::1
+  - 169.254.169.254          # AWS / GCP / Azure metadata
+  - metadata.google.internal  # GCP metadata
+  - 100.100.100.200          # Alibaba Cloud metadata
+
+# ─── Logging ─────────────────────────────────────────────────────────
+log_level: INFO   # DEBUG | INFO | WARNING | ERROR | CRITICAL
+
+# ─── Server Transport ────────────────────────────────────────────────
+transport: stdio  # stdio | sse
