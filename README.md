@@ -198,7 +198,8 @@ $env:VISION_MCP_TRANSPORT="sse"; python3 -m vision_mcp
         "VISION_MCP_PROVIDER_TYPE": "openai",
         "VISION_MCP_PROVIDER_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "VISION_MCP_PROVIDER_API_KEY": "sk-你的key",
-        "VISION_MCP_PROVIDER_MODEL": "qwen-vl-max"
+        "VISION_MCP_PROVIDER_MODEL": "qwen-vl-max",
+        "VISION_MCP_PROVIDER_MAX_TOKENS": "2000"
       }
     }
   }
@@ -208,6 +209,8 @@ $env:VISION_MCP_TRANSPORT="sse"; python3 -m vision_mcp
 > 把 `"command"` 替换为第一步 `which python3` 输出的完整路径。
 >
 > 其他服务商只需改 `BASE_URL`、`API_KEY`、`MODEL` 三个值。**Anthropic 用户**把 `PROVIDER_TYPE` 改为 `anthropic`，`PROVIDER_BASE_URL` 不填（默认官方）或填第三方中转地址。
+>
+> `VISION_MCP_PROVIDER_MAX_TOKENS` 可选，控制模型最大输出长度。OCR 任务建议设为 `4000` 以上。默认 `2000`。
 
 stdio 模式由编辑器自动管理进程，不需要手动启动服务。
 
@@ -286,6 +289,7 @@ docker run -d -p 8000:8000 \
   -e VISION_MCP_PROVIDER_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1 \
   -e VISION_MCP_PROVIDER_API_KEY=sk-你的key \
   -e VISION_MCP_PROVIDER_MODEL=qwen-vl-max \
+  -e VISION_MCP_PROVIDER_MAX_TOKENS=2000 \
   mcp-server-vision
 ```
 
@@ -313,7 +317,7 @@ docker run -d -p 8000:8000 \
 ## 安全机制
 
 - **路径白名单** — 只能读取 `allowed_paths` 中的目录，symlink 绕过攻击会被阻止
-- **SSRF 防护** — 自动拦截内网地址、云元数据端点、非 HTTP 协议
+- **SSRF 防护** — 自动拦截内网地址、云元数据端点、非 HTTP 协议（仅对用户输入的图片/视频 URL 生效；Provider API 地址自动豁免，Ollama 等本地服务不受影响）
 - **资源限制** — 文件大小、像素数、超时时间均有上限
 - **MIME 验证** — 通过文件头魔术字节检测真实类型，不信任扩展名
 

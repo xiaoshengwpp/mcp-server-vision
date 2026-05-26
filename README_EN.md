@@ -197,7 +197,8 @@ No config.yaml needed — all configuration is done via the `env` fields below. 
         "VISION_MCP_PROVIDER_TYPE": "openai",
         "VISION_MCP_PROVIDER_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "VISION_MCP_PROVIDER_API_KEY": "sk-your-key",
-        "VISION_MCP_PROVIDER_MODEL": "qwen-vl-max"
+        "VISION_MCP_PROVIDER_MODEL": "qwen-vl-max",
+        "VISION_MCP_PROVIDER_MAX_TOKENS": "2000"
       }
     }
   }
@@ -207,6 +208,8 @@ No config.yaml needed — all configuration is done via the `env` fields below. 
 > Replace `"command"` with the full path from Step 1 (`which python3`).
 >
 > For other providers, just change `BASE_URL`, `API_KEY`, and `MODEL`. **Anthropic users** change `PROVIDER_TYPE` to `anthropic`, and either omit `PROVIDER_BASE_URL` (defaults to official API) or set it to a third-party proxy URL.
+>
+> `VISION_MCP_PROVIDER_MAX_TOKENS` is optional — controls the maximum output length. Set to `4000+` for OCR tasks. Defaults to `2000`.
 
 stdio mode is managed by the editor automatically — no manual startup needed.
 
@@ -285,6 +288,7 @@ docker run -d -p 8000:8000 \
   -e VISION_MCP_PROVIDER_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1 \
   -e VISION_MCP_PROVIDER_API_KEY=sk-your-key \
   -e VISION_MCP_PROVIDER_MODEL=qwen-vl-max \
+  -e VISION_MCP_PROVIDER_MAX_TOKENS=2000 \
   mcp-server-vision
 ```
 
@@ -312,7 +316,7 @@ After configuration, your AI editor gains these tools:
 ## Security
 
 - **Path whitelist** — Only directories in `allowed_paths` can be read; symlink bypass attacks are blocked
-- **SSRF protection** — Auto-blocks internal addresses, cloud metadata endpoints, non-HTTP protocols
+- **SSRF protection** — Auto-blocks internal addresses, cloud metadata endpoints, non-HTTP protocols (only applies to user-supplied image/video URLs; provider API URLs are automatically exempted, so local services like Ollama work without issues)
 - **Resource limits** — File size, pixel count, and timeout are all capped
 - **MIME validation** — Real type detected via magic bytes, file extensions not trusted
 

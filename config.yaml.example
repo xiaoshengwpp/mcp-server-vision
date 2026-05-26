@@ -11,6 +11,7 @@ providers:
     base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
     api_key: ${DASHSCOPE_API_KEY}  # 从环境变量读取，或直接填写
     model: qwen-vl-max  # 可选: qwen-vl-plus, qwen-vl-max-latest 等
+    max_tokens: 2000    # 模型最大输出 token 数，默认 2000；OCR 任务建议设为 4000+
     is_default: true
 
   # 示例 2: OpenAI 官方 API
@@ -19,6 +20,7 @@ providers:
   #   base_url: https://api.openai.com/v1
   #   api_key: ${OPENAI_API_KEY}
   #   model: gpt-4o  # 可选: gpt-4o-mini, gpt-4-turbo 等
+  #   max_tokens: 2000
 
   # 示例 3: Anthropic Claude（base_url 可选，默认官方 API；第三方中转填对应地址）
   # - name: anthropic
@@ -26,6 +28,7 @@ providers:
   #   # base_url: https://你的中转地址/v1  # 第三方中转服务才需要，官方 API 不用填
   #   api_key: ${ANTHROPIC_API_KEY}
   #   model: claude-3-5-sonnet-20241022  # 可选: claude-3-opus-20240229 等
+  #   max_tokens: 2000
 
   # 示例 4: 其他 OpenAI 兼容服务（如 SiliconFlow, DeepSeek 等）
   # - name: siliconflow
@@ -62,6 +65,7 @@ providers:
 # - VISION_MCP_PROVIDER_API_KEY: API 密钥
 # - VISION_MCP_PROVIDER_MODEL: 模型名称
 # - VISION_MCP_PROVIDER_NAME: provider 名称（可选，默认 "default"）
+# - VISION_MCP_PROVIDER_MAX_TOKENS: 最大输出 token 数（可选，默认 2000）
 
 # ─── API Settings ────────────────────────────────────────────────────
 api_timeout: 120          # seconds
@@ -76,12 +80,15 @@ max_image_pixels: 16000000 # 16 MP
 
 # ─── Allowed Paths (local file access) ───────────────────────────────
 # Only files under these directories can be read by the server.
+# Provider API URLs (e.g. localhost:11434 for Ollama) are automatically
+# exempted from SSRF checks, so you can safely use local services.
 allowed_paths:
-  - /Users/xcode/Desktop
-  - /Users/xcode/Documents
+  - ~/Desktop
+  - ~/Documents
   - /tmp
 
 # ─── Blocked Domains (SSRF protection) ───────────────────────────────
+# These only apply to user-supplied image/video URLs, NOT provider API URLs.
 blocked_domains:
   - localhost
   - 127.0.0.1
@@ -96,3 +103,6 @@ log_level: INFO   # DEBUG | INFO | WARNING | ERROR | CRITICAL
 
 # ─── Server Transport ────────────────────────────────────────────────
 transport: stdio  # stdio | sse
+
+# ─── Advanced ────────────────────────────────────────────────────────
+max_concurrent_requests: 5  # max concurrent API requests (video frame analysis)
