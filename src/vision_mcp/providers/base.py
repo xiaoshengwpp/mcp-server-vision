@@ -28,6 +28,7 @@ class BaseProvider(abc.ABC):
     _client: httpx.AsyncClient | None = None
     model: str
     timeout: float
+    max_tokens: int = 2000
 
     @property
     @abc.abstractmethod
@@ -101,6 +102,7 @@ class OpenAICompatibleProvider(BaseProvider):
         name: str = "openai_compatible",
         timeout: float = 60.0,
         max_retries: int = 3,
+        max_tokens: int = 2000,
     ):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -108,6 +110,7 @@ class OpenAICompatibleProvider(BaseProvider):
         self._name = name
         self.timeout = timeout
         self.max_retries = max_retries
+        self.max_tokens = max_tokens
 
     @property
     def name(self) -> str:
@@ -149,7 +152,7 @@ class OpenAICompatibleProvider(BaseProvider):
                     ],
                 }
             ],
-            "max_tokens": 2000,
+            "max_tokens": self.max_tokens,
         }
 
         last_error = None
@@ -212,7 +215,7 @@ class OpenAICompatibleProvider(BaseProvider):
         payload = {
             "model": model_override or self.model,
             "messages": [{"role": "user", "content": content}],
-            "max_tokens": 2000,
+            "max_tokens": self.max_tokens,
         }
 
         last_error = None
@@ -261,12 +264,14 @@ class OllamaProvider(BaseProvider):
         name: str = "ollama",
         timeout: float = 120.0,
         max_retries: int = 2,
+        max_tokens: int = 2000,
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self._name = name
         self.timeout = timeout
         self.max_retries = max_retries
+        self.max_tokens = max_tokens
 
     @property
     def name(self) -> str:
@@ -336,6 +341,7 @@ class AnthropicProvider(BaseProvider):
         base_url: str = "",
         timeout: float = 60.0,
         max_retries: int = 3,
+        max_tokens: int = 2000,
     ):
         self.api_key = api_key
         self.model = model
@@ -343,6 +349,7 @@ class AnthropicProvider(BaseProvider):
         self.base_url = (base_url.strip().rstrip("/") if base_url else self._DEFAULT_BASE_URL)
         self.timeout = timeout
         self.max_retries = max_retries
+        self.max_tokens = max_tokens
 
     @property
     def name(self) -> str:
@@ -366,7 +373,7 @@ class AnthropicProvider(BaseProvider):
 
         payload = {
             "model": model_override or self.model,
-            "max_tokens": 2000,
+            "max_tokens": self.max_tokens,
             "messages": [
                 {
                     "role": "user",
@@ -452,7 +459,7 @@ class AnthropicProvider(BaseProvider):
 
         payload = {
             "model": model_override or self.model,
-            "max_tokens": 2000,
+            "max_tokens": self.max_tokens,
             "messages": [{"role": "user", "content": content}],
         }
 
