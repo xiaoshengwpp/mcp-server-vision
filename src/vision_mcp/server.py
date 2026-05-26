@@ -10,10 +10,11 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 from .config import get_config
-from .media import load_image, load_video
+from .media import MediaError, VideoError, VideoFrame, load_image, load_video
 from .providers import AnthropicProvider, OllamaProvider, OpenAICompatibleProvider, registry
 from .providers.base import BaseProvider
 from .security import SecurityConfig as _SecurityConfig
+from .security import SecurityError as _SecurityError
 from .security import check_file_size, validate_file, validate_local_path, validate_url
 
 # Setup logging
@@ -31,12 +32,26 @@ mcp = FastMCP(
 
 
 def _get_security_config() -> _SecurityConfig:
-    """Build a SecurityConfig from the current SimpleConfig settings."""
+    """Build a SecurityConfig from the current SimpleConfig settings.
+
+    Provider API base URLs are added to exempted_hosts so that
+    SSRF checks don't block local services (Ollama, vLLM, etc.).
+    """
     config = get_config()
+    # Collect provider hostnames for SSRF exemption
+    exempted: set[str] = set()
+    for p in config.providers:
+        if p.base_url:
+            from urllib.parse import urlparse
+            parsed = urlparse(p.base_url)
+            if parsed.hostname:
+                exempted.add(parsed.hostname)
+
     return _SecurityConfig(
         allowed_paths=config.allowed_paths,
         max_file_size=int(max(config.max_image_size_mb, config.max_video_size_mb) * 1024 * 1024),
         max_image_pixels=config.max_image_pixels,
+        exempted_hosts=frozenset(exempted),
     )
 
 
@@ -53,6 +68,7 @@ def initialize_providers() -> None:
                     base_url=p_config.base_url,
                     api_key=p_config.api_key,
                     model=p_config.model,
+                    max_tokens=p_config.max_tokens,
                     timeout=config.api_timeout,
                     max_retries=config.max_retries,
                 )
@@ -65,6 +81,7 @@ def initialize_providers() -> None:
                     base_url=p_config.base_url,
                     api_key=p_config.api_key,
                     model=p_config.model,
+                    max_tokens=p_config.max_tokens,
                     timeout=config.api_timeout,
                     max_retries=config.max_retries,
                 )
@@ -76,6 +93,7 @@ def initialize_providers() -> None:
                     name=p_config.name,
                     base_url=p_config.base_url,
                     model=p_config.model,
+                    max_tokens=p_config.max_tokens,
                     timeout=config.api_timeout,
                     max_retries=config.max_retries,
                 )
@@ -124,9 +142,12 @@ async def analyze_image(
 
         return result.text
 
+    except (_SecurityError, MediaError) as e:
+        logger.warning(f"analyze_image blocked: {e}")
+        return f"❌ Error: {e}"
     except Exception as e:
         logger.error(f"analyze_image failed: {e}", exc_info=True)
-        return f"❌ Error: {e}"
+        return f"❌ Internal error: {e}"
 
 
 @mcp.tool()
@@ -171,9 +192,12 @@ async def analyze_multiple_images(
 
         return result.text
 
+    except (_SecurityError, MediaError) as e:
+        logger.warning(f"analyze_multiple_images blocked: {e}")
+        return f"❌ Error: {e}"
     except Exception as e:
         logger.error(f"analyze_multiple_images failed: {e}", exc_info=True)
-        return f"❌ Error: {e}"
+        return f"❌ Internal error: {e}"
 
 
 @mcp.tool()
@@ -209,20 +233,43 @@ async def analyze_video(
 
         # Get provider
         prov = registry.get(provider)
+        config = get_config()
+        max_concurrent = max(1, min(config.max_concurrent_requests, len(video.frames)))
 
-        # Analyze frames
-        results = []
-        for i, frame in enumerate(video.frames, 1):
-            logger.info(f"Analyzing frame {i}/{len(video.frames)} (timestamp: {frame.timestamp_sec:.1f}s)...")
-            frame_prompt = f"Frame {i}/{len(video.frames)}: {prompt}"
+        # Analyze frames concurrently with semaphore-controlled parallelism
+        async def _analyze_frame(idx: int, frame: VideoFrame) -> str:
+            frame_prompt = f"Frame {idx}/{len(video.frames)}: {prompt}"
+            logger.info(f"Analyzing frame {idx}/{len(video.frames)} (timestamp: {frame.timestamp_sec:.1f}s)...")
             result = await prov.analyze(frame.data, frame_prompt, model_override=model)
-            results.append(f"## Frame {i} (t={frame.timestamp_sec:.1f}s)\n{result.text}")
+            return f"## Frame {idx} (t={frame.timestamp_sec:.1f}s)\n{result.text}"
 
-        return "\n\n".join(results)
+        sem = asyncio.Semaphore(max_concurrent)
+        async def _analyze_with_sem(idx: int, frame: VideoFrame) -> str:
+            async with sem:
+                return await _analyze_frame(idx, frame)
 
+        results = await asyncio.gather(
+            *[_analyze_with_sem(i, f) for i, f in enumerate(video.frames, 1)],
+            return_exceptions=True,
+        )
+
+        # Filter out exceptions and format results
+        output_parts: list[str] = []
+        for i, r in enumerate(results, 1):
+            if isinstance(r, Exception):
+                logger.warning(f"Frame {i} analysis failed: {r}")
+                output_parts.append(f"## Frame {i}\n⚠️ Analysis failed: {r}")
+            else:
+                output_parts.append(str(r))
+
+        return "\n\n".join(output_parts)
+
+    except (_SecurityError, MediaError, VideoError) as e:
+        logger.warning(f"analyze_video blocked: {e}")
+        return f"❌ Error: {e}"
     except Exception as e:
         logger.error(f"analyze_video failed: {e}", exc_info=True)
-        return f"❌ Error: {e}"
+        return f"❌ Internal error: {e}"
 
 
 @mcp.tool()
@@ -272,9 +319,12 @@ Extract the text now:"""
 
         return result.text
 
+    except (_SecurityError, MediaError) as e:
+        logger.warning(f"ocr_image blocked: {e}")
+        return f"❌ Error: {e}"
     except Exception as e:
         logger.error(f"ocr_image failed: {e}", exc_info=True)
-        return f"❌ Error: {e}"
+        return f"❌ Internal error: {e}"
 
 
 @mcp.tool()
@@ -287,7 +337,7 @@ async def get_supported_formats() -> str:
     formats = """## Supported Formats
 
 ### Images
-- **Formats**: JPEG, PNG, GIF, WebP, BMP, SVG
+- **Formats**: JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC, HEIF, AVIF
 - **Max size**: {max_image_size_mb}MB
 - **Max pixels**: {max_image_pixels:,} (≈4000×4000)
 
@@ -383,10 +433,18 @@ async def serve() -> None:
 
     logger.info(f"Starting Vision MCP Server (transport={config.transport})...")
 
-    if config.transport == "sse":
-        await mcp.run_sse_async()
-    else:
-        await mcp.run_stdio_async()
+    try:
+        if config.transport == "sse":
+            await mcp.run_sse_async()
+        else:
+            await mcp.run_stdio_async()
+    finally:
+        # Ensure all provider HTTP clients are properly closed
+        for name in registry.list_providers():
+            try:
+                await registry.get(name).close()
+            except Exception:
+                pass
 
 
 async def main() -> None:

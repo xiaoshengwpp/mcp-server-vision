@@ -26,6 +26,7 @@ from .security import (
     FileSizeError,
     SecurityConfig,
     SecurityError,
+    _detect_mime_from_bytes,
     check_file_size,
     validate_file,
     validate_local_path,
@@ -391,7 +392,6 @@ async def _load_image_from_url(
     mime_type: str | None = None
 
     header = raw_bytes[:32]
-    from .security import _detect_mime_from_bytes
     mime_type = _detect_mime_from_bytes(header)
 
     if mime_type is None and content_type:
