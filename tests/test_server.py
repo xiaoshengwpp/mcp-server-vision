@@ -110,7 +110,8 @@ class TestAnalyzeImage:
                 source=str(tmp_path / "missing.jpg"),
                 prompt="test",
             )
-            assert "❌ Error" in result
+            assert "❌" in result
+            assert "test error" in result
 
 
 # ---------------------------------------------------------------------------
