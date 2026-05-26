@@ -112,6 +112,14 @@ class SecurityConfig:
         repr=False,
     )
 
+    # Provider API URLs exempted from SSRF checks.
+    # This allows local services (Ollama, vLLM, LM Studio) to work
+    # while still blocking user-supplied image/video URLs to private IPs.
+    exempted_hosts: frozenset[str] = field(
+        default_factory=frozenset[str],
+        repr=False,
+    )
+
     def __post_init__(self) -> None:
         # Normalise allowed paths to absolute resolved strings.
         self.allowed_paths = [
@@ -208,10 +216,15 @@ def validate_url(
 
     Checks performed:
       1. Scheme must be http or https.
-      2. Host must not be in the blocked list.
+      2. Host must not be in the blocked list (unless exempted).
       3. Resolved IP(s) must not be private/internal (if ``block_private_ips``).
       4. Must not match cloud-metadata patterns.
       5. No IPv6-literal loopback or link-local.
+
+    Hosts in ``config.exempted_hosts`` are allowed to bypass SSRF
+    checks (steps 2–5). This is intended for provider API URLs
+    (e.g. local Ollama, vLLM services) — NOT for user-supplied
+    image/video URLs.
 
     Raises ``SSRFError`` on violation.  Returns the original URL on success.
     """
@@ -229,6 +242,10 @@ def validate_url(
     host = parsed.hostname or ""
     if not host:
         raise SSRFError("URL has no hostname.")
+
+    # Exempted hosts (provider API URLs) bypass SSRF checks
+    if host in config.exempted_hosts:
+        return url
 
     # 2. Blocked host check
     if host in config.blocked_hosts:
