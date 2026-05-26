@@ -3,7 +3,7 @@
 
 FROM python:3.13-slim AS builder
 
-# Install system dependencies
+# Install system dependencies for video processing
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libgl1-mesa-glx \
@@ -13,19 +13,17 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Copy dependency files
+# Copy dependency files first for layer caching
 COPY pyproject.toml ./
-
-# Install dependencies
-RUN pip install --no-cache-dir .
-
-# Copy source code
 COPY src/ ./src/
+
+# Install the package (src/ is now available)
+RUN pip install --no-cache-dir .
 
 # Production stage
 FROM python:3.13-slim
 
-# Install runtime dependencies
+# Install runtime dependencies for video processing
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libgl1-mesa-glx \
@@ -53,9 +51,5 @@ ENV PYTHONUNBUFFERED=1 \
 # Expose port for SSE transport
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/health')" || exit 1
-
-# Run server
-CMD ["python", "-m", "vision_mcp.server"]
+# Run server via __main__.py entry point
+CMD ["python", "-m", "vision_mcp"]
